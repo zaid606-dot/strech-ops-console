@@ -144,9 +144,13 @@ export function registerFieldRoutes(v1: Hono<Env>) {
       return c.json({ error: 'forbidden' }, 403);
     }
     let summary = '';
+    let deferredItems: string[] = [];
     try {
       const body = await c.req.json();
       summary = typeof body?.summary === 'string' ? body.summary : '';
+      if (Array.isArray(body?.deferred_items)) {
+        deferredItems = body.deferred_items.filter((x: unknown) => typeof x === 'string');
+      }
     } catch {
       summary = '';
     }
@@ -165,6 +169,7 @@ export function registerFieldRoutes(v1: Hono<Env>) {
                 : 'ops',
         actorId: actor.sub,
         summary,
+        deferredItems,
       });
       await client.query('COMMIT');
       return c.json(result);

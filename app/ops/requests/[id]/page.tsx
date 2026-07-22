@@ -43,11 +43,22 @@ export default function RequestDeskPage() {
   const [progress, setProgress] = useState<
     { key: string; label: string; done: boolean; at: string | null }[]
   >([]);
+  const [cases, setCases] = useState<
+    {
+      id: string;
+      type: string;
+      status: string;
+      reason_code: string | null;
+      blocks_close: boolean;
+    }[]
+  >([]);
   const [candidates, setCandidates] = useState<ContractorCandidate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [smsBody, setSmsBody] = useState('');
+  const [deferredItems, setDeferredItems] = useState('capacitor');
+  const [scopeDesc, setScopeDesc] = useState('Extra work discovered');
 
   const [rescheduleStart, setRescheduleStart] = useState('');
   const [rescheduleEnd, setRescheduleEnd] = useState('');
@@ -64,12 +75,13 @@ export default function RequestDeskPage() {
       }
       setRequest(reqBody);
 
-      const [propRes, evRes, chRes, remRes, progRes] = await Promise.all([
+      const [propRes, evRes, chRes, remRes, progRes, casesRes] = await Promise.all([
         fetch(`/api/ops/properties/${reqBody.property_id}`),
         fetch(`/api/ops/requests/${id}/events`),
         fetch(`/api/ops/requests/${id}/charges`),
         fetch(`/api/ops/requests/${id}/reminders`),
         fetch(`/api/ops/requests/${id}/member-progress`),
+        fetch(`/api/ops/cases?status=all&service_request_id=${id}`),
       ]);
       const propBody = await propRes.json();
       const evBody = await evRes.json();
@@ -92,6 +104,12 @@ export default function RequestDeskPage() {
         setProgress(progBody.steps ?? []);
       } else {
         setProgress([]);
+      }
+      if (casesRes.ok) {
+        const casesBody = await casesRes.json();
+        setCases(casesBody.items ?? []);
+      } else {
+        setCases([]);
       }
 
       const needAvail = ['dispatching', 'booked', 'confirmed'].includes(reqBody.status);
@@ -226,11 +244,13 @@ export default function RequestDeskPage() {
   const showReschedule = status === 'booked' || status === 'confirmed';
   const showReassign = status === 'booked' || status === 'confirmed';
   const showNoShow = status === 'confirmed';
-  const showRedispatch = status === 'no_show' || status === 'needs_review';
+  const showRedispatch = status === 'no_show';
+  const showMessyField = status === 'confirmed' || status === 'checked_in';
+  const showPartsHold = status === 'checked_in';
   const showCancel =
     status != null &&
-    !['cancelled', 'closed', 'completed', 'reviewed'].includes(status);
-  const showClose = status === 'reviewed' || status === 'completed';
+    ['dispatching', 'booked', 'confirmed', 'checked_in'].includes(status);
+  const showClose = false; // Stage 9
   const activeCharge = charges.find((c) => c.status !== 'voided') ?? null;
 
   return (
@@ -622,6 +642,77 @@ export default function RequestDeskPage() {
             </button>
           ) : null}
 
+          {showMessyField ? (
+            <>
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={() => void postAction('flag', { kind: 'late', note: 'Running late' }, 'flag')}
+              >
+                Flag late
+              </button>
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={() =>
+                  void postAction('flag', { kind: 'cant_find', note: 'Cant find place' }, 'flag')
+                }
+              >
+                Can't find
+              </button>
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={() =>
+                  void postNamed(`/api/ops/emergency`, 'emergency', {
+                    service_request_id: id,
+                    signal_type: 'ops_declared',
+                    payload: { note: 'ops desk emergency' },
+                  })
+                }
+              >
+                Emergency
+              </button>
+            </>
+          ) : null}
+
+          {showPartsHold ? (
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() =>
+                void postAction(
+                  'parts-hold',
+                  {
+                    deferred_items: deferredItems
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  },
+                  'parts-hold',
+                )
+              }
+            >
+              Parts hold
+            </button>
+          ) : null}
+
+          {showMessyField ? (
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() =>
+                void postAction(
+                  'scope-change',
+                  { description: scopeDesc, proposed_amount_cents: 15000 },
+                  'scope-change',
+                )
+              }
+            >
+              Scope change
+            </button>
+          ) : null}
+
           {showNoShow ? (
             <>
               <button
@@ -773,7 +864,81 @@ export default function RequestDeskPage() {
             </button>
           </div>
         ) : null}
+
+        {showPartsHold || showMessyField ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {showPartsHold ? (
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span className="muted">Deferred items (comma)</span>
+                <input
+                  value={deferredItems}
+                  onChange={(e) => setDeferredItems(e.target.value)}
+                />
+              </label>
+            ) : null}
+            {showMessyField ? (
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span className="muted">Scope description</span>
+                <input value={scopeDesc} onChange={(e) => setScopeDesc(e.target.value)} />
+              </label>
+            ) : null}
+          </div>
+        ) : null}
       </section>
+
+      {request ? (
+        <section
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              padding: '10px 14px',
+              background: 'var(--bg-elevated)',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+            }}
+          >
+            <h2 style={{ margin: 0, fontSize: 14 }}>Cases on this request</h2>
+            <Link href="/ops/cases" className="muted">
+              All cases →
+            </Link>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Reason</th>
+                <th>Flags</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cases.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="muted">
+                    No cases
+                  </td>
+                </tr>
+              ) : null}
+              {cases.map((c) => (
+                <tr key={c.id}>
+                  <td className="mono">{c.type}</td>
+                  <td>
+                    <span className={`pill ${c.status}`}>{c.status}</span>
+                  </td>
+                  <td className="mono muted">{c.reason_code ?? '—'}</td>
+                  <td className="muted">{c.blocks_close ? 'blocks_close' : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       <section
         style={{

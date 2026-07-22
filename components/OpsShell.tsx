@@ -11,7 +11,7 @@ const NAV: { href: string; label: string; exact?: boolean; soon?: boolean }[] = 
   { href: '/ops/board', label: 'Board' },
   { href: '/ops/offers', label: 'Offers' },
   { href: '/ops/agent', label: 'Agent' },
-  { href: '/ops/cases', label: 'Cases', soon: true },
+  { href: '/ops/cases', label: 'Cases' },
   { href: '/ops/contractors', label: 'Contractors' },
 ];
 

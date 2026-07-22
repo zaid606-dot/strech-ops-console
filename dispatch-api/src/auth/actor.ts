@@ -33,6 +33,7 @@ const AGENT_ALLOW_EXACT = new Set<string>([
   'GET /v1/agent/policy',
   'GET /v1/agent/work',
   'GET /v1/agent/escalations',
+  'GET /v1/cases',
   'POST /v1/agent/tick',
 ]);
 
@@ -61,6 +62,13 @@ export function assertAgentAllowed(method: string, path: string, role: Actor['ro
     return;
   }
   if (method.toUpperCase() === 'POST' && path === '/v1/field/sms-inbound') {
+    return;
+  }
+  // Agent may open messy cases / no-show / flag — not resolve emergency or approve scope
+  if (
+    method.toUpperCase() === 'POST' &&
+    /\/v1\/requests\/[^/]+\/(parts-hold|scope-change|flag|no-show)$/.test(path)
+  ) {
     return;
   }
   for (const prefix of AGENT_ALLOW_PREFIX) {

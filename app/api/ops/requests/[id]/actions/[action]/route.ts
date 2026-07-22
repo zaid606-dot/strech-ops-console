@@ -14,6 +14,9 @@ const ALLOWED = new Set([
   'assign',
   'confirm-visit',
   'ack-arrival',
+  'parts-hold',
+  'scope-change',
+  'flag',
   'close',
 ]);
 

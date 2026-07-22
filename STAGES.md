@@ -24,7 +24,7 @@ Do not start the next stage without **go**.
 | **5** | Confirm + reminders + charge | ✅ **DONE** — `ack_arrival`, `confirm_visit`, pending charge, reminders on desk |
 | **6** | Agent runtime | ✅ **DONE** — work queue, policy toggles, tick worker, Agent panel |
 | **7** | Field loop | ✅ **DONE** — en-route / check-in / complete, timeline + Field console |
-| **8** | Cases + messy paths | Cases UI, no-show/parts/scope, emergency ingress |
+| **8** | Cases + messy paths | ✅ **DONE** — Cases UI, no-show/parts/scope, emergency ingress |
 | **9** | Money + review + close | Capture stub, payout held→payable, review → close |
 | **10** | Harden + prod smoke | Idempotency, INV-2 tests, full loop on Vercel link |
 
@@ -104,6 +104,17 @@ Do not start the next stage without **go**.
 - [x] Field console: On my way / Check in / Complete (canonical statuses)
 - [x] Contractor IDOR on field actions
 - [x] `npm run smoke:field` passes
+
+## Stage 8 acceptance
+
+- [x] Cases list API + console (emergencies first); resolve/dismiss ops-only
+- [x] No-show → case + status + cancel reminders; redispatch → pool
+- [x] Cancel matrix voids pending charge; reject cancel after complete
+- [x] `parts_hold` stays `checked_in` + child follow-up (`parent_request_id`)
+- [x] `scope_change` open; ops approve amends charge; agent 403 on approve
+- [x] `POST /v1/emergency` + per-request panic; agent bypass queue; agent 403 resolve/ingress
+- [x] late / cant_find flags; desk Cases panel + messy actions
+- [x] `npm run smoke:cases` passes
 
 ## Core directives (every stage)
 

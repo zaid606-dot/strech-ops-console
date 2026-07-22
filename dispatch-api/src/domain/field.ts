@@ -101,6 +101,7 @@ export async function completeJob(
     actorRole: 'contractor' | 'ops' | 'agent' | 'system';
     actorId: string;
     summary: string;
+    deferredItems?: string[];
   },
 ) {
   if (!opts.summary?.trim()) {
@@ -117,6 +118,19 @@ export async function completeJob(
       code: 'INVALID_STATUS',
       status: 409,
       detail: `complete requires checked_in, got ${sr.status}`,
+    });
+  }
+
+  const deferred = (opts.deferredItems ?? []).filter((s) => s.trim());
+  let partsHold: unknown = null;
+  if (deferred.length) {
+    const { openPartsHold } = await import('./recovery.js');
+    partsHold = await openPartsHold(client, {
+      serviceRequestId: opts.serviceRequestId,
+      actorRole: opts.actorRole,
+      actorId: opts.actorId,
+      deferredItems: deferred,
+      note: 'auto parts_hold from complete deferred_items',
     });
   }
 
@@ -141,7 +155,7 @@ export async function completeJob(
     ],
   );
 
-  return { status: result.to, from: result.from };
+  return { status: result.to, from: result.from, parts_hold: partsHold };
 }
 
 export async function listContractorJobs(
