@@ -30,6 +30,16 @@ export type Charge = {
   created_at: string;
 };
 
+export type Payout = {
+  id: string;
+  service_request_id: string;
+  contractor_id: string;
+  amount_cents: number;
+  status: string;
+  note: string | null;
+  created_at: string;
+};
+
 export type ReminderJob = {
   id: string;
   service_request_id: string;

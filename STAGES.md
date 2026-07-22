@@ -25,7 +25,7 @@ Do not start the next stage without **go**.
 | **6** | Agent runtime | ✅ **DONE** — work queue, policy toggles, tick worker, Agent panel |
 | **7** | Field loop | ✅ **DONE** — en-route / check-in / complete, timeline + Field console |
 | **8** | Cases + messy paths | ✅ **DONE** — Cases UI, no-show/parts/scope, emergency ingress |
-| **9** | Money + review + close | Capture stub, payout held→payable, review → close |
+| **9** | Money + review + close | ✅ **DONE** — capture stub, payout held→payable, review → close |
 | **10** | Harden + prod smoke | Idempotency, INV-2 tests, full loop on Vercel link |
 
 ## Stage 1 acceptance
@@ -115,6 +115,17 @@ Do not start the next stage without **go**.
 - [x] `POST /v1/emergency` + per-request panic; agent bypass queue; agent 403 resolve/ingress
 - [x] late / cant_find flags; desk Cases panel + messy actions
 - [x] `npm run smoke:cases` passes
+
+## Stage 9 acceptance
+
+- [x] Migration `005_money.sql` — payouts, payment_attempts, refunds
+- [x] Complete → payout `held` + capture stub (`payment_attempt`); $0 auto-captured
+- [x] `ack_completion` + `submit_review` → `reviewed`
+- [x] Close guards: `blocks_close`, charge terminal, payout → `payable`
+- [x] Dispute → `disputed` + payout stays held; refund rows (charge stays captured)
+- [x] Agent 403 on money read/capture/refund
+- [x] Desk Money panel: charge + payout + capture/review/refund/close
+- [x] `npm run smoke:money` passes
 
 ## Core directives (every stage)
 

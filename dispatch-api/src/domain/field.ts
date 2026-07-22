@@ -142,20 +142,29 @@ export async function completeJob(
     note: `complete: ${opts.summary.trim().slice(0, 500)}`,
   });
 
-  // Capture/payout deferred to Stage 9 — timeline note only
-  await client.query(
-    `INSERT INTO job_events
-       (service_request_id, from_status, to_status, actor_role, actor_id, note, created_at)
-     SELECT id, status, status, 'system', $2, $3, clock_timestamp()
-     FROM service_requests WHERE id = $1`,
-    [
-      opts.serviceRequestId,
-      '00000000-0000-4000-8000-000000000001',
-      'complete received — capture/payout deferred to Stage 9',
-    ],
-  );
+  const { settleMoneyOnComplete, captureCharge } = await import('./money.js');
+  const money = await settleMoneyOnComplete(client, {
+    serviceRequestId: opts.serviceRequestId,
+    contractorId: sr.assigned_contractor_id as string,
+    actorRole: opts.actorRole,
+    actorId: opts.actorId,
+  });
 
-  return { status: result.to, from: result.from, parts_hold: partsHold };
+  let capture: unknown = null;
+  if (money.capture_enqueued) {
+    capture = await captureCharge(client, {
+      serviceRequestId: opts.serviceRequestId,
+      actorRole: 'system',
+      actorId: '00000000-0000-4000-8000-000000000001',
+    });
+  }
+
+  return {
+    status: result.to,
+    from: result.from,
+    parts_hold: partsHold,
+    money: { ...money, capture },
+  };
 }
 
 export async function listContractorJobs(

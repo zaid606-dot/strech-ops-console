@@ -18,6 +18,10 @@ const ALLOWED = new Set([
   'scope-change',
   'flag',
   'close',
+  'review',
+  'dispute',
+  'ack-completion',
+  'capture',
 ]);
 
 type Ctx = { params: Promise<{ id: string; action: string }> };

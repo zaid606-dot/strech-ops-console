@@ -8,6 +8,7 @@ import type {
   Charge,
   ContractorCandidate,
   JobEvent,
+  Payout,
   Property,
   ReminderJob,
   ServiceRequest,
@@ -39,6 +40,10 @@ export default function RequestDeskPage() {
   const [property, setProperty] = useState<Property | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [charges, setCharges] = useState<Charge[]>([]);
+  const [payout, setPayout] = useState<Payout | null>(null);
+  const [refunds, setRefunds] = useState<{ id: string; amount_cents: number; status: string }[]>(
+    [],
+  );
   const [reminders, setReminders] = useState<ReminderJob[]>([]);
   const [progress, setProgress] = useState<
     { key: string; label: string; done: boolean; at: string | null }[]
@@ -75,10 +80,10 @@ export default function RequestDeskPage() {
       }
       setRequest(reqBody);
 
-      const [propRes, evRes, chRes, remRes, progRes, casesRes] = await Promise.all([
+      const [propRes, evRes, moneyRes, remRes, progRes, casesRes] = await Promise.all([
         fetch(`/api/ops/properties/${reqBody.property_id}`),
         fetch(`/api/ops/requests/${id}/events`),
-        fetch(`/api/ops/requests/${id}/charges`),
+        fetch(`/api/ops/requests/${id}/money`),
         fetch(`/api/ops/requests/${id}/reminders`),
         fetch(`/api/ops/requests/${id}/member-progress`),
         fetch(`/api/ops/cases?status=all&service_request_id=${id}`),
@@ -87,11 +92,15 @@ export default function RequestDeskPage() {
       const evBody = await evRes.json();
       if (propRes.ok) setProperty(propBody);
       if (evRes.ok) setEvents(evBody.items ?? []);
-      if (chRes.ok) {
-        const chBody = await chRes.json();
-        setCharges(chBody.items ?? []);
+      if (moneyRes.ok) {
+        const moneyBody = await moneyRes.json();
+        setCharges(moneyBody.charge ? [moneyBody.charge] : []);
+        setPayout(moneyBody.payout ?? null);
+        setRefunds(moneyBody.refunds ?? []);
       } else {
         setCharges([]);
+        setPayout(null);
+        setRefunds([]);
       }
       if (remRes.ok) {
         const remBody = await remRes.json();
@@ -250,7 +259,8 @@ export default function RequestDeskPage() {
   const showCancel =
     status != null &&
     ['dispatching', 'booked', 'confirmed', 'checked_in'].includes(status);
-  const showClose = false; // Stage 9
+  const showClose = status === 'reviewed' || status === 'resolved';
+  const showReview = status === 'needs_review';
   const activeCharge = charges.find((c) => c.status !== 'voided') ?? null;
 
   return (
@@ -476,18 +486,79 @@ export default function RequestDeskPage() {
                   ${(activeCharge.amount_cents / 100).toFixed(2)}{' '}
                   <span className={`pill ${activeCharge.status}`}>{activeCharge.status}</span>
                 </dd>
+                <dt className="muted">Payout</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {payout
+                    ? `$${(payout.amount_cents / 100).toFixed(2)} `
+                    : '— '}
+                  {payout ? (
+                    <span className={`pill ${payout.status}`}>{payout.status}</span>
+                  ) : null}
+                </dd>
                 <dt className="muted">Tier</dt>
                 <dd style={{ margin: 0 }}>{activeCharge.membership_tier}</dd>
                 <dt className="muted">Note</dt>
                 <dd className="muted" style={{ margin: 0 }}>
                   {activeCharge.note ?? '—'}
                 </dd>
+                {refunds.length ? (
+                  <>
+                    <dt className="muted">Refunds</dt>
+                    <dd className="mono" style={{ margin: 0 }}>
+                      {refunds
+                        .map((r) => `$${(r.amount_cents / 100).toFixed(2)} ${r.status}`)
+                        .join(' · ')}
+                    </dd>
+                  </>
+                ) : null}
               </dl>
             ) : (
               <p className="muted" style={{ margin: 0 }}>
                 No charge yet — created on <span className="mono">confirm_visit</span>.
               </p>
             )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              {activeCharge?.status === 'pending' || activeCharge?.status === 'failed' ? (
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() =>
+                    void postNamed(`/api/ops/requests/${id}/capture`, 'capture', {})
+                  }
+                >
+                  Capture
+                </button>
+              ) : null}
+              {activeCharge?.status === 'captured' ? (
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() =>
+                    void postNamed(`/api/ops/requests/${id}/refund`, 'refund', {
+                      amount_cents: Math.min(1000, activeCharge.amount_cents),
+                      reason: 'ops goodwill',
+                    })
+                  }
+                >
+                  Refund $10
+                </button>
+              ) : null}
+              {showReview ? (
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() =>
+                    void postNamed(`/api/ops/requests/${id}/review`, 'review', {
+                      rating: 5,
+                      comment: 'Ops stand-in review',
+                    })
+                  }
+                >
+                  Submit review
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div

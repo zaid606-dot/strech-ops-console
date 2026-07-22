@@ -15,7 +15,8 @@
     "smoke:confirm": "tsx --env-file=.env scripts/smoke-confirm.ts",
     "smoke:agent": "tsx --env-file=.env scripts/smoke-agent.ts",
     "smoke:field": "tsx --env-file=.env scripts/smoke-field.ts",
-    "smoke:cases": "tsx --env-file=.env scripts/smoke-cases.ts"
+    "smoke:cases": "tsx --env-file=.env scripts/smoke-cases.ts",
+    "smoke:money": "tsx --env-file=.env scripts/smoke-money.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",
