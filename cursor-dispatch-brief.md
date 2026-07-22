@@ -279,8 +279,8 @@ offer.batch_size               3
 offer.ttl_seconds              600
 offer.max_waves_before_ops     3
 
-confirm.auto_confirm           true | false
-confirm.require_contractor_ack true          # arrival must be acked
+confirm.auto_confirm_visit     true | false
+confirm.require_contractor_ack true          # ack_arrival required
 confirm.max_eta_slip_minutes   30            # late ETA auto-ok under this
 confirm.reminder_cadence       [24h, 2h, 30m]
 
@@ -298,8 +298,8 @@ stuck.no_progress_minutes      45            # booked/confirmed with no movement
 1. Offer accepted → `booked`  
 2. Agent proposes exact arrival within window (or contractor sent one)  
 3. If `require_contractor_ack` and contractor hasn’t acked → wait / nudge via system reminder  
-4. If prerequisites met and `auto_confirm=true` → agent calls `POST /requests/{id}/confirm`  
-5. If `auto_confirm=false` or confidence/prereqs fail → leave on ops Board as `ready_to_confirm`  
+4. If prerequisites met and `auto_confirm_visit=true` → agent calls `POST /requests/{id}/confirm-visit`  
+5. If `auto_confirm_visit=false` or confidence/prereqs fail → leave on ops Board as `ready_to_confirm`  
 6. System schedules reminder rows from `reminder_cadence` (agent requests schedule; system fires)
 
 Agent does **not** invent reminder times per chat turn — it applies policy, then system owns delivery.
@@ -313,7 +313,7 @@ for job in agent_work_queue:
     needs_offer_wave      → score; create offers per policy
     offer_expired         → next wave or escalate if max_waves
     awaiting_arrival      → propose slot; nudge contractor
-    ready_to_confirm      → confirm if policy.auto_confirm else escalate
+    ready_to_confirm      → confirm_visit if policy.auto_confirm_visit else escalate
     inbound_sms           → parse; if unambiguous apply API else escalate
     late_under_threshold  → update ETA + notify member
     late_over_threshold   → escalate ops
@@ -328,7 +328,7 @@ If the API returns **403**, agent must escalate — it never retries a denied ac
 - **Agent activity** on the request timeline (`actor_role=agent`)  
 - **Policy panel** — current confirmation/offer/SLA settings  
 - **Escalation queue** — jobs the agent refused or could not advance  
-- Toggle `auto_confirm` off → agent still watches and prepares; humans press Confirm  
+- Toggle `auto_confirm_visit` off → agent still watches and prepares; humans press Confirm visit  
 
 ---
 
