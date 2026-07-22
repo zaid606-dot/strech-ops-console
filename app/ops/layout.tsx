@@ -7,5 +7,9 @@ export default async function OpsLayout({ children }: { children: React.ReactNod
   const session = await getOpsSession();
   if (!session) redirect('/login');
 
-  return <OpsShell operatorSub={session.operatorSub}>{children}</OpsShell>;
+  return (
+    <OpsShell operatorSub={session.operatorSub} username={session.username}>
+      {children}
+    </OpsShell>
+  );
 }

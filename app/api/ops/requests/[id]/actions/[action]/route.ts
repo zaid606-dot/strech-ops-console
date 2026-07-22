@@ -20,7 +20,7 @@ type Ctx = { params: Promise<{ id: string; action: string }> };
 
 /** Proxy POST /v1/requests/{id}/{action} for ops desk recovery + confirm. */
 export async function POST(request: NextRequest, ctx: Ctx) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
 
   const { id, action } = await ctx.params;

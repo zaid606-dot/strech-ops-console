@@ -7,7 +7,7 @@ import { dispatchFetch } from '@/lib/dispatch/client';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(request: NextRequest, ctx: Ctx) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
   const { id } = await ctx.params;
 

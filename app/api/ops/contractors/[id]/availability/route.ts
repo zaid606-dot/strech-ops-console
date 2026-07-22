@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /** GET / POST contractor availability rules → dispatch `/contractors/{id}/availability`. */
 export async function GET(_request: NextRequest, ctx: Ctx) {
-  const session = getOpsSessionFromRequest(_request);
+  const session = await getOpsSessionFromRequest(_request);
   if (!session) return unauthorized();
   const { id } = await ctx.params;
 
@@ -27,7 +27,7 @@ export async function GET(_request: NextRequest, ctx: Ctx) {
 }
 
 export async function POST(request: NextRequest, ctx: Ctx) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
   const { id } = await ctx.params;
 

@@ -138,21 +138,36 @@ tr:hover td {
   color: var(--warn);
 }
 
+.pill.booked,
 .pill.scheduled {
   border-color: var(--accent);
   color: var(--accent);
 }
 
 .pill.confirmed,
+.pill.checked_in,
 .pill.approved,
 .pill.in_progress {
   border-color: var(--ok);
   color: var(--ok);
 }
 
+.pill.needs_review {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pill.disputed,
+.pill.no_show,
+.pill.cancelled {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .pill.completed,
 .pill.reviewed,
-.pill.closed {
+.pill.closed,
+.pill.resolved {
   border-color: var(--text-muted);
   color: var(--text-muted);
 }

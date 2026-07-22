@@ -1,40 +1,39 @@
 # Strech Ops Console
 
-Phase 3 desk UI: clear the dispatch pool — pick a vetted pro, book a slot, confirm the visit.
+Password-gated dispatch desk. API-first window onto `strech-dispatch-api`.
 
-**Not Bobo.** This app alone mints `role=ops` actor JWTs. Member apps must never call `/pool`, `/appointments`, or `/contractors/*`.
+**Build stages:** see [`STAGES.md`](./STAGES.md). Domain: [`AGENTS.md`](./AGENTS.md).
 
-## Setup
+## Stage 1 — locked shell
 
 ```bash
 cp .env.example .env.local
-# Match dispatch EDGE_BEARER_TOKEN / ACTOR_JWT_SECRET
+# Set OPS_DASHBOARD_USER + OPS_DASHBOARD_PASSWORD (≥12 chars)
 npm install
-npm run dev   # http://localhost:3002
+npm run dev   # http://localhost:3002/login
 ```
 
-Dispatch must be running (e.g. `localhost:3001`) with migrations through **`008`**.
+### Vercel
 
-**Contractor backend connect:** [`docs/CONTRACTOR_CONNECT.md`](./docs/CONTRACTOR_CONNECT.md)
+1. Import this repo → Framework Preset **Next.js**
+2. Set env (Production + Preview):
 
-## Desk flow (Gate 3)
+| Var | Required |
+|-----|----------|
+| `OPS_DASHBOARD_USER` | yes |
+| `OPS_DASHBOARD_PASSWORD` | yes (≥12 chars) |
+| `OPS_SESSION_SECRET` | recommended (≥12; defaults to ops password) |
+| `OPS_OPERATOR_SUB` | yes (UUID) |
+| `FIELD_DASHBOARD_PASSWORD` | optional (falls back to ops password) |
+| `STRECH_DISPATCH_BASE_URL` | Stage 2+ |
+| `STRECH_EDGE_BEARER_TOKEN` | Stage 2+ |
+| `STRECH_ACTOR_JWT_SECRET` | Stage 2+ |
 
-1. Log in with `OPS_DEV_TOKEN`
-2. **Contractors** → create pro → Approve (categories + zips matching pool jobs)
-3. **Pool** / **Board** → open a `dispatching` request
-4. Book suggested slot → **Confirm visit**
-5. **Recovery** panel for unassign / reschedule / reassign / no-show / redispatch / cancel
-6. Suspend a pro → they disappear from available
+3. Deploy. Open `https://<project>.vercel.app/login`
+4. Optional: enable Vercel Deployment Protection as a second lock; app password is still required
 
-Or seed from dispatch-api: `npm run seed:ops-contractor`  
-API acceptance: `npm run smoke:gate3` in dispatch-api.
+Desk routes (`/ops/*`, `/api/ops/*`) refuse traffic without a session cookie. Auth failures return a generic error (no user/password distinction).
 
-## Field portal (Phase 4)
+## Field
 
-http://localhost:3002/field/login — enter contractor UUID + `FIELD_DEV_TOKEN` (or `OPS_DEV_TOKEN`).
-
-My jobs → Check in (from `confirmed`) → Complete job.
-
-## Docs
-
-See `docs/GATE_3.md`, dispatch `docs/PHASE_3_OPS_CONSOLE.md`, `docs/PHASE_4_FIELD_LOOP.md`.
+`/field/login` — contractor UUID + field password.

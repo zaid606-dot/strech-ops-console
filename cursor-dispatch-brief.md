@@ -643,7 +643,7 @@ Done test is desk-driven loop. Product flows assume agent + SMS + card capture.
 Without stubs that **look real in console** (offer accept, fake SMS inbound, fake payment_attempt), holes H5/H11 stay invisible until late.
 
 ### H21 — Legacy console mismatch
-Current `strech-ops-console` has no Offer radar, Agent panel, money panel, cases, or `booked`/`checked_in` gates. Rebuild vs patch is undecided under “start fresh.”
+**RESOLVED → §15.** Extend existing Strech Ops visual system (IBM Plex / graphite / pills); rebuild nav + add Overview/Offers/Agent/Cases/Money screens; do not greenfield a new aesthetic.
 
 ### Priority to close first (before coding past WP2)
 1. **H1** status enum  
