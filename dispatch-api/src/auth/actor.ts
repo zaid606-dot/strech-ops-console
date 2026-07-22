@@ -30,6 +30,10 @@ const AGENT_ALLOW_EXACT = new Set<string>([
   'GET /v1/pool',
   'GET /v1/offers',
   'GET /v1/contractors/available',
+  'GET /v1/agent/policy',
+  'GET /v1/agent/work',
+  'GET /v1/agent/escalations',
+  'POST /v1/agent/tick',
 ]);
 
 const AGENT_ALLOW_PREFIX: string[] = [];

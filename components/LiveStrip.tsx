@@ -13,17 +13,25 @@ type Overview = {
 
 export function LiveStrip() {
   const [data, setData] = useState<Overview | null>(null);
+  const [queue, setQueue] = useState<number | null>(null);
   const [err, setErr] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/ops/overview');
-      if (!res.ok) {
+      const [oRes, wRes] = await Promise.all([
+        fetch('/api/ops/overview'),
+        fetch('/api/ops/agent/work'),
+      ]);
+      if (!oRes.ok) {
         setErr(true);
         return;
       }
       setErr(false);
-      setData(await res.json());
+      setData(await oRes.json());
+      if (wRes.ok) {
+        const w = await wRes.json();
+        setQueue((w.items as unknown[])?.length ?? 0);
+      }
     } catch {
       setErr(true);
     }
@@ -69,10 +77,11 @@ export function LiveStrip() {
         </strong>
       </span>
       <span>
-        Agent <span className="mono">stage 6</span>
+        Agent queue{' '}
+        <strong style={{ color: 'var(--text)' }}>{err ? '—' : (queue ?? '…')}</strong>
       </span>
       <span style={{ marginLeft: 'auto' }}>
-        <Link href="/ops/pool">Open pool →</Link>
+        <Link href="/ops/agent">Agent →</Link>
       </span>
     </div>
   );

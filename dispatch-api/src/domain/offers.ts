@@ -24,6 +24,7 @@ export async function startOfferWave(
     strategy: 'sequential' | 'parallel_batch';
     batchSize?: number;
     ttlSeconds?: number;
+    maxWaves?: number;
     actorRole: 'ops' | 'agent' | 'system';
     actorId: string;
   },
@@ -83,7 +84,36 @@ export async function startOfferWave(
     [opts.serviceRequestId],
   );
   const waveNumber = (waveCount.rows[0].n as number) + 1;
-  const maxWaves = 3;
+  const maxWaves = opts.maxWaves ?? 3;
+
+  if (waveNumber > maxWaves) {
+    await client.query(
+      `INSERT INTO cases (service_request_id, type, reason_code, owner_role, meta)
+       VALUES ($1, 'escalation', $2, 'ops', $3::jsonb)`,
+      [
+        opts.serviceRequestId,
+        'pool_exhaust',
+        JSON.stringify({ wave_number: waveNumber }),
+      ],
+    );
+    await client.query(
+      `UPDATE service_requests SET dispatch_owner = 'ops', updated_at = now() WHERE id = $1`,
+      [opts.serviceRequestId],
+    );
+    await client.query(
+      `INSERT INTO job_events
+         (service_request_id, from_status, to_status, actor_role, actor_id, note, created_at)
+       VALUES ($1, $2, $2, $3, $4, $5, clock_timestamp())`,
+      [
+        opts.serviceRequestId,
+        sr.status,
+        opts.actorRole,
+        opts.actorId,
+        'max waves — escalated to ops',
+      ],
+    );
+    return { wave: null, offers: [], escalated: true as const };
+  }
 
   if (candidates.length === 0) {
     await client.query(
@@ -348,13 +378,20 @@ export async function declineOffer(
 ) {
   await expirePendingOffers(client);
   const offerRes = await client.query(
-    `SELECT * FROM dispatch_offers WHERE id = $1 FOR UPDATE`,
+    `SELECT o.*, sr.dispatch_owner
+     FROM dispatch_offers o
+     JOIN service_requests sr ON sr.id = o.service_request_id
+     WHERE o.id = $1
+     FOR UPDATE OF o`,
     [opts.offerId],
   );
   if (!offerRes.rowCount) {
     throw Object.assign(new Error('not_found'), { code: 'NOT_FOUND' });
   }
   const offer = offerRes.rows[0];
+  if (offer.dispatch_owner === 'ops' && opts.actorRole === 'agent') {
+    throw Object.assign(new Error('owned_by_ops'), { code: 'OWNED_BY_OPS', status: 403 });
+  }
   if (opts.actorRole === 'contractor' && opts.actorId !== offer.contractor_id) {
     throw Object.assign(new Error('forbidden'), { code: 'FORBIDDEN', status: 403 });
   }

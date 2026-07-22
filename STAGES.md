@@ -22,7 +22,7 @@ Do not start the next stage without **go**.
 | **3** | Book → Pool | ✅ **DONE** — seed/create → live Pool + Overview |
 | **4** | Offers → Booked | ✅ **DONE** — scoring, waves, accept race, Offer radar, Board |
 | **5** | Confirm + reminders + charge | ✅ **DONE** — `ack_arrival`, `confirm_visit`, pending charge, reminders on desk |
-| **6** | Agent runtime | Work queue, policy toggles, tick worker, Agent panel |
+| **6** | Agent runtime | ✅ **DONE** — work queue, policy toggles, tick worker, Agent panel |
 | **7** | Field loop | Check-in / complete, timeline progress |
 | **8** | Cases + messy paths | Cases UI, no-show/parts/scope, emergency ingress |
 | **9** | Money + review + close | Capture stub, payout held→payable, review → close |
@@ -82,6 +82,17 @@ Do not start the next stage without **go**.
 - [x] Agent allow-list + `OWNED_BY_OPS` on confirm-visit
 - [x] Desk: Ack / Confirm visit + Money + Reminders panels
 - [x] `npm run smoke:confirm` passes
+
+## Stage 6 acceptance
+
+- [x] Migration `004_agent.sql` — `agent_policy` + `agent_tick_log`
+- [x] `GET /v1/agent/work` attention queue (excludes emergency + ops-owned)
+- [x] `GET`/`PATCH /v1/agent/policy` — agent read; ops write only
+- [x] `POST /v1/agent/tick` — offer waves, auto `confirm_visit`, escalate stuck/SLA/confirm-off
+- [x] Tick mutations always `actor_role=agent` + `job_event`
+- [x] Agent 403 on policy write + money (charges)
+- [x] Console Agent panel: queue, policy toggles, Run tick now, escalations, tick log
+- [x] `npm run smoke:agent` passes
 
 ## Core directives (every stage)
 

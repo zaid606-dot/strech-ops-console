@@ -203,6 +203,9 @@ export function registerOfferRoutes(v1: Hono<Env>) {
     } catch (e) {
       await client.query('ROLLBACK');
       const { status, body } = errBody(e);
+      if ((e as { code?: string }).code === 'OWNED_BY_OPS') {
+        return c.json(body, 403);
+      }
       return c.json(body, status as 409);
     } finally {
       client.release();
