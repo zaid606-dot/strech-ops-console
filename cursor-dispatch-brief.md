@@ -565,7 +565,7 @@ Stub the ports; keep the state machine and audit trail real.
 
 ## 11. Suggested next step
 
-Implement **WP0 → WP1 → WP2** until Offer radar can lock a job from the pool in the console. That is the first vertical slice of Flow A and unblocks everything else. Close **H1–H3, H12, H13** before that slice so you don’t rebuild the spine twice.
+Implement **WP0 → WP1 → WP2** with password login + Pool + Offer radar against a local API, until you can log into the dashboard and watch a job lock from the pool. Close **H1–H3, H13** before that slice so you don’t rebuild the spine twice.
 
 ---
 
@@ -650,9 +650,8 @@ Current `strech-ops-console` has no Offer radar, Agent panel, money panel, cases
 2. **H2** appointment timing  
 3. **H3** INV-2 post-confirm  
 4. **H13** ops vs agent ownership  
-5. **H12** where dispatch-api + agent worker live  
 
-**Resolved this pass:** H4–H11, H14–H19 → see **§13**.
+**Resolved:** H4–H11, H14–H19 → §13. **H12** → §14 (dashboard + API co-located).
 
 ---
 
@@ -800,3 +799,85 @@ promise_by = created_at + sla_hours(category_id, membership_tier)
 - Agent: prioritize breached jobs in work queue; cannot close the SLA case  
 
 ---
+
+## 15. Fully interactive UI — design system
+
+This is an **operations dashboard**, not a marketing site. Design extends the existing Strech Ops desk (IBM Plex, dark graphite, status pills) — denser and more live, not consumer chrome.
+
+### 15.1 Design principles
+
+1. **Status is the hero.** Every screen leads with job state (pills + counts). Shell brand = “STRECH OPS”; content hierarchy = what needs attention.
+2. **One job narrative.** Request desk is a vertical story: status → property → *only legal actions* → money/cases → event timeline.
+3. **Dense, scannable.** Tables over card grids. Mono for IDs/times. One primary button per state (Book, Confirm visit, Close).
+4. **Live, not noisy.** “Updated 4s ago”, TTL countdowns, brief row flash on change. Errors inline with codes (`SLOT_CONFLICT`).
+5. **Safe affordances.** Destructive = danger + confirm dialog. Timeline always shows `actor_role` (ops / agent / contractor / system).
+6. **Desktop-first desk; thumb-first field.** Ops ~1280px; Field single column.
+
+### 15.2 Visual language (extend current tokens)
+
+```text
+Surface   --bg #0f1419 | elevated #1a222c | row #151c24
+Ink       --text #e8eef4 | muted #8b9aab
+Accent    --accent #3d9cf0
+Signal    --ok #3ecf8e | --warn #e6b84d | --danger #e85d5d
+Type      IBM Plex Sans + IBM Plex Mono
+Radius    4px — no pill-everything, no purple glow, no emoji status
+Motion    150–200ms row/timeline refresh; TTL pulse only when <60s
+```
+
+| Status | Pill |
+|--------|------|
+| `dispatching` | warn |
+| `booked` | accent |
+| `confirmed` / `checked_in` | ok |
+| `needs_review` | muted + accent wait dot |
+| `disputed` / emergency case | danger |
+| `cancelled` / `closed` | muted |
+
+### 15.3 Shell
+
+```text
+STRECH OPS | Overview | Pool | Offers | Board | Agent | Cases | Contractors | Field | user | Log out
+live strip: 12 dispatching · 3 offers · 1 emergency · agent 2s ago · 2 SLA breach
+```
+
+Login lands on **Overview**, not an empty pool.
+
+### 15.4 Screen interactions
+
+| Screen | Design |
+|--------|--------|
+| **Login** | Centered username + password; wordmark; inline errors |
+| **Overview** | Metric tiles + “Needs you” (cases/SLA) + recent events; 5s poll |
+| **Pool** | Table → click desk; Seed demo button |
+| **Offer radar** | Job groups, TTL bars, Accept/Decline; sibling lock on accept |
+| **Board** | Status columns; chip → desk |
+| **Request desk** | 2-col meta; state actions only; money; cases; timeline newest-first |
+| **Agent** | Queue + policy toggles + “Run tick now” + tick log |
+| **Cases** | Emergencies first; resolve forms ops-only |
+| **Field** | Large Check in / Complete targets |
+
+### 15.5 Request desk (core interactive surface)
+
+```text
+CONF-AB12  ● confirmed
+[Confirm visit] [Reschedule] [Cancel]     ← only legal actions enabled
+
+Money: charge pending · payout —
+Cases: chips
+Timeline: 10:42 agent confirm_visit · 10:41 contractor ack_arrival · …
+```
+
+After an action: pill updates + new timeline row flashes — that’s the “loop moving” feel.
+
+### 15.6 Shared components
+
+`StatusPill` · `LiveAge` · `TtlBar` · `ActorChip` · `EventTimeline` · `MoneyPanel` · `CaseList` · `ConfirmDialog` · `ErrorBanner` · `MetricTile` · `DataTable`
+
+All via BFF `/api/ops/*` — never DB from the browser.
+
+### 15.7 UI ships with each WP
+
+WP0 login+shell → WP1 Overview+Pool → WP2 Offers+Board → WP3 desk confirm/money → WP3b Agent → WP4 Field → WP5 Cases → WP6 money/close → WP7 polish.
+
+**UI done test:** password login → watch counts live → seed → Offer radar → Confirm visit → Field complete → Closed, without leaving the dashboard.
