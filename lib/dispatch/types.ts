@@ -12,8 +12,33 @@ export type ServiceRequest = {
   promise_by: string | null;
   confirmed_at: string | null;
   confirmation_code: string | null;
+  arrival_acked_at: string | null;
+  dispatch_owner?: string;
   created_at: string;
   updated_at: string;
+};
+
+export type Charge = {
+  id: string;
+  service_request_id: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  membership_tier: string;
+  category_id: string;
+  note: string | null;
+  created_at: string;
+};
+
+export type ReminderJob = {
+  id: string;
+  service_request_id: string;
+  kind: string;
+  fire_at: string;
+  timezone: string;
+  status: string;
+  fired_at: string | null;
+  created_at: string;
 };
 
 export type Property = {

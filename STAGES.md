@@ -21,7 +21,7 @@ Do not start the next stage without **go**.
 | **2** | Dispatch API spine | ✅ **DONE** — `/v1` health, schema, status engine, `job_event`, INV-2 serializer |
 | **3** | Book → Pool | ✅ **DONE** — seed/create → live Pool + Overview |
 | **4** | Offers → Booked | ✅ **DONE** — scoring, waves, accept race, Offer radar, Board |
-| **5** | Confirm + reminders + charge | `ack_arrival`, `confirm_visit`, pending charge, reminders on desk |
+| **5** | Confirm + reminders + charge | ✅ **DONE** — `ack_arrival`, `confirm_visit`, pending charge, reminders on desk |
 | **6** | Agent runtime | Work queue, policy toggles, tick worker, Agent panel |
 | **7** | Field loop | Check-in / complete, timeline progress |
 | **8** | Cases + messy paths | Cases UI, no-show/parts/scope, emergency ingress |
@@ -70,6 +70,18 @@ Do not start the next stage without **go**.
 - [x] Accept → `booked` + `job_event` via `transitionStatus`
 - [x] Console Offer radar + Board with canonical status columns
 - [x] `npm run smoke:offers` passes
+
+## Stage 5 acceptance
+
+- [x] Migration `003_confirm.sql` — `charges` + `reminder_jobs` (money ≠ status)
+- [x] `POST /v1/requests/:id/ack-arrival` (contractor / ops stand-in)
+- [x] `POST /v1/requests/:id/confirm-visit` requires ack + appointment → `confirmed` + `job_event`
+- [x] Pending `charge` on confirm (Free > $0; Comfort/Premium included = $0)
+- [x] Reminder cadence T-24 / T-2 / T-30; cancel helper; fire worker stub
+- [x] Member notify stub masked (INV-2); member-view passes leak assert
+- [x] Agent allow-list + `OWNED_BY_OPS` on confirm-visit
+- [x] Desk: Ack / Confirm visit + Money + Reminders panels
+- [x] `npm run smoke:confirm` passes
 
 ## Core directives (every stage)
 

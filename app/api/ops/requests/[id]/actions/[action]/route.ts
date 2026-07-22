@@ -12,7 +12,8 @@ const ALLOWED = new Set([
   'reschedule',
   'reassign',
   'assign',
-  'confirm',
+  'confirm-visit',
+  'ack-arrival',
   'close',
 ]);
 

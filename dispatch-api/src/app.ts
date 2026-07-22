@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { type Env, requireActor } from './auth/actor.js';
 import { createServiceRequest } from './domain/requests.js';
 import { pool } from './db/pool.js';
+import { registerConfirmRoutes } from './routes/confirm.js';
 import { registerOfferRoutes } from './routes/offers.js';
 import { memberPublicRequest } from './serializers/member.js';
 import { STATUSES } from './status/transitions.js';
@@ -29,13 +30,14 @@ export function buildApp() {
   v1.use('*', requireActor);
 
   registerOfferRoutes(v1);
+  registerConfirmRoutes(v1);
 
   v1.get('/health', (c) => {
     const actor = c.get('actor');
     return c.json({
       ok: true,
       service: 'strech-dispatch-api',
-      stage: 4,
+      stage: 5,
       actor_role: actor.role,
     });
   });

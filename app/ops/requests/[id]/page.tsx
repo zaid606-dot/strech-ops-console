@@ -5,9 +5,11 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import type {
+  Charge,
   ContractorCandidate,
   JobEvent,
   Property,
+  ReminderJob,
   ServiceRequest,
 } from '@/lib/dispatch/types';
 
@@ -36,6 +38,8 @@ export default function RequestDeskPage() {
   const [request, setRequest] = useState<ServiceRequest | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
+  const [charges, setCharges] = useState<Charge[]>([]);
+  const [reminders, setReminders] = useState<ReminderJob[]>([]);
   const [candidates, setCandidates] = useState<ContractorCandidate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -56,16 +60,30 @@ export default function RequestDeskPage() {
       }
       setRequest(reqBody);
 
-      const [propRes, evRes] = await Promise.all([
+      const [propRes, evRes, chRes, remRes] = await Promise.all([
         fetch(`/api/ops/properties/${reqBody.property_id}`),
         fetch(`/api/ops/requests/${id}/events`),
+        fetch(`/api/ops/requests/${id}/charges`),
+        fetch(`/api/ops/requests/${id}/reminders`),
       ]);
       const propBody = await propRes.json();
       const evBody = await evRes.json();
       if (propRes.ok) setProperty(propBody);
       if (evRes.ok) setEvents(evBody.items ?? []);
+      if (chRes.ok) {
+        const chBody = await chRes.json();
+        setCharges(chBody.items ?? []);
+      } else {
+        setCharges([]);
+      }
+      if (remRes.ok) {
+        const remBody = await remRes.json();
+        setReminders(remBody.items ?? []);
+      } else {
+        setReminders([]);
+      }
 
-      const needAvail = ['dispatching', 'scheduled', 'confirmed'].includes(reqBody.status);
+      const needAvail = ['dispatching', 'booked', 'confirmed'].includes(reqBody.status);
       if (propRes.ok && needAvail) {
         const windowStart =
           reqBody.preferred_window_start ?? new Date().toISOString();
@@ -125,6 +143,34 @@ export default function RequestDeskPage() {
     }
   }
 
+  async function postNamed(path: string, busyKey: string, body: unknown = {}) {
+    setBusy(busyKey);
+    setActionMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const code = data.code ? ` [${data.code}]` : '';
+        setError(`${data.detail ?? data.error ?? `${busyKey} failed`}${code}`);
+        return false;
+      }
+      setActionMsg(`${busyKey} ok`);
+      await load();
+      return true;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function fireReminders() {
+    await postNamed('/api/ops/fire-reminders', 'fire-reminders', {});
+  }
+
   async function book(c: ContractorCandidate) {
     setBusy(c.contractor_id);
     setActionMsg(null);
@@ -159,16 +205,18 @@ export default function RequestDeskPage() {
 
   const status = request?.status;
   const showBook = status === 'dispatching';
-  const showConfirm = status === 'scheduled';
-  const showUnassign = status === 'assigned';
-  const showReschedule = status === 'scheduled' || status === 'confirmed';
-  const showReassign = status === 'scheduled' || status === 'confirmed';
-  const showNoShow = status === 'scheduled' || status === 'confirmed';
+  const showAck = status === 'booked' && !request?.arrival_acked_at;
+  const showConfirmVisit = status === 'booked' && !!request?.arrival_acked_at;
+  const showUnassign = status === 'booked' && !request?.arrival_acked_at;
+  const showReschedule = status === 'booked' || status === 'confirmed';
+  const showReassign = status === 'booked' || status === 'confirmed';
+  const showNoShow = status === 'confirmed';
   const showRedispatch = status === 'no_show' || status === 'needs_review';
   const showCancel =
     status != null &&
     !['cancelled', 'closed', 'completed', 'reviewed'].includes(status);
   const showClose = status === 'reviewed' || status === 'completed';
+  const activeCharge = charges.find((c) => c.status !== 'voided') ?? null;
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
@@ -237,24 +285,57 @@ export default function RequestDeskPage() {
               <dd className="mono" style={{ margin: 0 }}>
                 {request.appointment_id ?? '—'}
               </dd>
+              <dt className="muted">Arrival ack</dt>
+              <dd className="mono" style={{ margin: 0 }}>
+                {request.arrival_acked_at ? fmt(request.arrival_acked_at) : '—'}
+              </dd>
+              <dt className="muted">Confirmed at</dt>
+              <dd className="mono" style={{ margin: 0 }}>
+                {request.confirmed_at ? fmt(request.confirmed_at) : '—'}
+              </dd>
               <dt className="muted">Details</dt>
               <dd className="mono" style={{ margin: 0 }}>
                 {JSON.stringify(request.details)}
               </dd>
             </dl>
 
-            {showConfirm ? (
-              <div style={{ marginTop: 14 }}>
+            <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {showAck ? (
                 <button
                   className="primary"
                   type="button"
-                  disabled={busy === 'confirm'}
-                  onClick={() => void postAction('confirm')}
+                  disabled={busy === 'ack-arrival'}
+                  onClick={() =>
+                    void postNamed(
+                      `/api/ops/requests/${id}/ack-arrival`,
+                      'ack-arrival',
+                    )
+                  }
                 >
-                  {busy === 'confirm' ? 'Confirming…' : 'Confirm visit'}
+                  {busy === 'ack-arrival' ? 'Acking…' : 'Ack arrival (ops stand-in)'}
                 </button>
-              </div>
-            ) : null}
+              ) : null}
+              {showConfirmVisit ? (
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={busy === 'confirm-visit'}
+                  onClick={() =>
+                    void postNamed(
+                      `/api/ops/requests/${id}/confirm-visit`,
+                      'confirm-visit',
+                    )
+                  }
+                >
+                  {busy === 'confirm-visit' ? 'Confirming…' : 'Confirm visit'}
+                </button>
+              ) : null}
+              {status === 'booked' && !request.arrival_acked_at ? (
+                <p className="muted" style={{ margin: 0, width: '100%' }}>
+                  Confirm visit unlocks after <span className="mono">ack_arrival</span>.
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div
@@ -274,6 +355,106 @@ export default function RequestDeskPage() {
               </p>
             ) : (
               <p className="muted">No property loaded</p>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {request ? (
+        <section
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 16,
+          }}
+        >
+          <div
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: 14,
+              background: 'var(--bg-elevated)',
+            }}
+          >
+            <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Money</h2>
+            {activeCharge ? (
+              <dl
+                style={{
+                  margin: 0,
+                  display: 'grid',
+                  gridTemplateColumns: '120px 1fr',
+                  gap: '6px 10px',
+                }}
+              >
+                <dt className="muted">Charge</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  ${(activeCharge.amount_cents / 100).toFixed(2)}{' '}
+                  <span className={`pill ${activeCharge.status}`}>{activeCharge.status}</span>
+                </dd>
+                <dt className="muted">Tier</dt>
+                <dd style={{ margin: 0 }}>{activeCharge.membership_tier}</dd>
+                <dt className="muted">Note</dt>
+                <dd className="muted" style={{ margin: 0 }}>
+                  {activeCharge.note ?? '—'}
+                </dd>
+              </dl>
+            ) : (
+              <p className="muted" style={{ margin: 0 }}>
+                No charge yet — created on <span className="mono">confirm_visit</span>.
+              </p>
+            )}
+          </div>
+
+          <div
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: 14,
+              background: 'var(--bg-elevated)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 10,
+              }}
+            >
+              <h2 style={{ margin: 0, fontSize: 14 }}>Reminders</h2>
+              <button
+                type="button"
+                disabled={busy === 'fire-reminders'}
+                onClick={() => void fireReminders()}
+              >
+                {busy === 'fire-reminders' ? 'Firing…' : 'Fire due'}
+              </button>
+            </div>
+            {reminders.length === 0 ? (
+              <p className="muted" style={{ margin: 0 }}>
+                None scheduled — T-24 / T-2 / T-30 after confirm.
+              </p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Kind</th>
+                    <th>Fire at</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reminders.map((r) => (
+                    <tr key={r.id}>
+                      <td className="mono">{r.kind}</td>
+                      <td className="mono muted">{fmt(r.fire_at)}</td>
+                      <td>
+                        <span className={`pill ${r.status}`}>{r.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </section>

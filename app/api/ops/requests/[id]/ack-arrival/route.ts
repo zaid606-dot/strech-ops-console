@@ -16,7 +16,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       role: 'ops',
       operatorSub: session.operatorSub,
       method: 'POST',
-      path: `/requests/${id}/confirm-visit`,
+      path: `/requests/${id}/ack-arrival`,
       idempotencyKey: crypto.randomUUID(),
       body: {},
     });

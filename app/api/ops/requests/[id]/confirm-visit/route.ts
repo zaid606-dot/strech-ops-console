@@ -6,6 +6,7 @@ import { dispatchFetch } from '@/lib/dispatch/client';
 
 type Ctx = { params: Promise<{ id: string }> };
 
+/** Canonical confirm_visit (H4) — not legacy /confirm. */
 export async function POST(request: NextRequest, ctx: Ctx) {
   const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
