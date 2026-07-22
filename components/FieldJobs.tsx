@@ -68,7 +68,7 @@ export function FieldJobs() {
         <div>
           <h1 style={{ margin: 0, fontSize: 22 }}>My jobs</h1>
           <p className="muted" style={{ margin: '4px 0 0' }}>
-            Booked appointments for this contractor.
+            Booked / confirmed / on-site jobs for this contractor.
           </p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading}>

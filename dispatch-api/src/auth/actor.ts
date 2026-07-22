@@ -54,6 +54,15 @@ export function assertAgentAllowed(method: string, path: string, role: Actor['ro
   if (method.toUpperCase() === 'GET' && /\/v1\/requests\/[^/]+\/reminders$/.test(path)) {
     return;
   }
+  if (
+    method.toUpperCase() === 'POST' &&
+    /\/v1\/requests\/[^/]+\/(en-route|check-in|complete)$/.test(path)
+  ) {
+    return;
+  }
+  if (method.toUpperCase() === 'POST' && path === '/v1/field/sms-inbound') {
+    return;
+  }
   for (const prefix of AGENT_ALLOW_PREFIX) {
     if (key.startsWith(prefix)) return;
   }

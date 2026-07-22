@@ -5,6 +5,7 @@ import { createServiceRequest } from './domain/requests.js';
 import { pool } from './db/pool.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerConfirmRoutes } from './routes/confirm.js';
+import { registerFieldRoutes } from './routes/field.js';
 import { registerOfferRoutes } from './routes/offers.js';
 import { memberPublicRequest } from './serializers/member.js';
 import { STATUSES } from './status/transitions.js';
@@ -33,13 +34,14 @@ export function buildApp() {
   registerOfferRoutes(v1);
   registerConfirmRoutes(v1);
   registerAgentRoutes(v1);
+  registerFieldRoutes(v1);
 
   v1.get('/health', (c) => {
     const actor = c.get('actor');
     return c.json({
       ok: true,
       service: 'strech-dispatch-api',
-      stage: 6,
+      stage: 7,
       actor_role: actor.role,
     });
   });

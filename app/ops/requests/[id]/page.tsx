@@ -40,10 +40,14 @@ export default function RequestDeskPage() {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [charges, setCharges] = useState<Charge[]>([]);
   const [reminders, setReminders] = useState<ReminderJob[]>([]);
+  const [progress, setProgress] = useState<
+    { key: string; label: string; done: boolean; at: string | null }[]
+  >([]);
   const [candidates, setCandidates] = useState<ContractorCandidate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [smsBody, setSmsBody] = useState('');
 
   const [rescheduleStart, setRescheduleStart] = useState('');
   const [rescheduleEnd, setRescheduleEnd] = useState('');
@@ -60,11 +64,12 @@ export default function RequestDeskPage() {
       }
       setRequest(reqBody);
 
-      const [propRes, evRes, chRes, remRes] = await Promise.all([
+      const [propRes, evRes, chRes, remRes, progRes] = await Promise.all([
         fetch(`/api/ops/properties/${reqBody.property_id}`),
         fetch(`/api/ops/requests/${id}/events`),
         fetch(`/api/ops/requests/${id}/charges`),
         fetch(`/api/ops/requests/${id}/reminders`),
+        fetch(`/api/ops/requests/${id}/member-progress`),
       ]);
       const propBody = await propRes.json();
       const evBody = await evRes.json();
@@ -81,6 +86,12 @@ export default function RequestDeskPage() {
         setReminders(remBody.items ?? []);
       } else {
         setReminders([]);
+      }
+      if (progRes.ok) {
+        const progBody = await progRes.json();
+        setProgress(progBody.steps ?? []);
+      } else {
+        setProgress([]);
       }
 
       const needAvail = ['dispatching', 'booked', 'confirmed'].includes(reqBody.status);
@@ -169,6 +180,10 @@ export default function RequestDeskPage() {
 
   async function fireReminders() {
     await postNamed('/api/ops/fire-reminders', 'fire-reminders', {});
+  }
+
+  async function simulateSms(text: string) {
+    await postNamed('/api/ops/simulate-sms', 'simulate-sms', { body: text });
   }
 
   async function book(c: ContractorCandidate) {
@@ -357,6 +372,56 @@ export default function RequestDeskPage() {
               <p className="muted">No property loaded</p>
             )}
           </div>
+        </section>
+      ) : null}
+
+      {request ? (
+        <section
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            padding: 14,
+            background: 'var(--bg-elevated)',
+          }}
+        >
+          <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Field progress</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            {progress.length === 0 ? (
+              <span className="muted">No progress yet</span>
+            ) : (
+              progress.map((s) => (
+                <span
+                  key={s.key}
+                  className={s.done ? 'ok' : 'muted'}
+                  style={{ fontSize: 13 }}
+                >
+                  {s.done ? '●' : '○'} {s.label}
+                  {s.at ? (
+                    <span className="mono muted" style={{ marginLeft: 6, fontSize: 11 }}>
+                      {fmt(s.at)}
+                    </span>
+                  ) : null}
+                </span>
+              ))
+            )}
+          </div>
+          {['confirmed', 'checked_in'].includes(request.status) && request.confirmation_code ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+              <input
+                value={smsBody}
+                onChange={(e) => setSmsBody(e.target.value)}
+                placeholder={`e.g. ARRIVED ${request.confirmation_code}`}
+                className="mono"
+              />
+              <button
+                type="button"
+                disabled={busy === 'simulate-sms' || !smsBody.trim()}
+                onClick={() => void simulateSms(smsBody.trim())}
+              >
+                Simulate SMS
+              </button>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

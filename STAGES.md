@@ -23,7 +23,7 @@ Do not start the next stage without **go**.
 | **4** | Offers → Booked | ✅ **DONE** — scoring, waves, accept race, Offer radar, Board |
 | **5** | Confirm + reminders + charge | ✅ **DONE** — `ack_arrival`, `confirm_visit`, pending charge, reminders on desk |
 | **6** | Agent runtime | ✅ **DONE** — work queue, policy toggles, tick worker, Agent panel |
-| **7** | Field loop | Check-in / complete, timeline progress |
+| **7** | Field loop | ✅ **DONE** — en-route / check-in / complete, timeline + Field console |
 | **8** | Cases + messy paths | Cases UI, no-show/parts/scope, emergency ingress |
 | **9** | Money + review + close | Capture stub, payout held→payable, review → close |
 | **10** | Harden + prod smoke | Idempotency, INV-2 tests, full loop on Vercel link |
@@ -93,6 +93,17 @@ Do not start the next stage without **go**.
 - [x] Agent 403 on policy write + money (charges)
 - [x] Console Agent panel: queue, policy toggles, Run tick now, escalations, tick log
 - [x] `npm run smoke:agent` passes
+
+## Stage 7 acceptance
+
+- [x] `GET /v1/contractors/me/jobs` — contractor field list (no medical/safety)
+- [x] `POST .../en-route` stays `confirmed` + `job_event`
+- [x] `POST .../check-in` → `checked_in`; `POST .../complete` → `needs_review` (auto-chain)
+- [x] SMS inbound stub (`OTW`/`ARRIVED`/`DONE` + confirmation_code); garbage escalates
+- [x] Member progress projection (INV-2); desk Field progress + Simulate SMS
+- [x] Field console: On my way / Check in / Complete (canonical statuses)
+- [x] Contractor IDOR on field actions
+- [x] `npm run smoke:field` passes
 
 ## Core directives (every stage)
 
