@@ -40,7 +40,10 @@ Everything real (jobs, contractors, appointments, charges, events) lives in **Po
 - **Home Health Score** — the member-facing score computed from sensor data. Not part of dispatch, but a medical/safety signal from it must never be handled by the dispatch agent (see invariants).
 - **Membership tiers** — Free, Comfort, Premium. They change *what a visit costs*, not the dispatch plumbing. An included visit is still a `charge` row at `amount_cents = 0`.
 - **BFF** — the Next.js API routes in `ops-console` that proxy the browser to `/v1`. Auth: `Authorization: Bearer <edge secret>` + `X-Strech-Actor: <JWT>`.
-- **Statuses** — `dispatching → booked → confirmed → checked_in → completed → needs_review → reviewed → closed`, plus `no_show`, `cancelled`, and (new) `disputed → resolved`.
+- **Statuses** — `dispatching → booked → confirmed → checked_in → completed → needs_review → reviewed → closed`, plus `no_show`, `cancelled`, and `disputed → resolved`.
+- **Confirm acts (do not overload “confirm”)** — `ack_arrival` (contractor), `confirm_visit` (ops/agent → `confirmed`), `ack_completion` / `submit_review` (member).
+- **Cases** — single ops-owned `cases` entity (`escalation`, `scope_change`, `reschedule`, `no_show`, `parts_hold`, `dispute`, `emergency`, `cancel_request`); not parallel “change-request” systems.
+- **Money timing** — `charge` at `confirm_visit`; capture on contractor `complete`; `payout` held until `closed`; refunds are rows, never statuses.
 
 ## Architecture in one breath
 

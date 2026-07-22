@@ -87,22 +87,26 @@ Output: ranked candidate list + recommended offer strategy (`sequential` | `para
 
 Artifacts (tables — names fixed for code):
 
-- `dispatch_offer` — request_id, contractor_id, rank, status (`pending|accepted|declined|expired|withdrawn`), expires_at, channel (`sms` stub)  
-- `dispatch_attempt` / wave id — strategy, batch size, started_at  
+- `dispatch_offer` — request_id, contractor_id, rank, status (`pending|accepted|declined|expired|withdrawn`), expires_at, channel (`sms` stub), **`reply_token`**  
+- `dispatch_wave` — strategy, batch size, started_at  
 
-SMS is a **notification adapter** stubbed in API (`NotificationPort.sendOffer`). No real Twilio required for phase-1; console can Accept/Decline as contractor stand-in.
+**Capacity (H10):** contractors expose concrete `availability_slots` (start/end). Scoring only returns pros with a free slot overlapping the preferred window. Accept books that slot into `appointments` and blocks overlaps (exclusion per contractor).
 
-### A4. Lock / release / escalate
+**Empty pool at intake:** still create `dispatching` + open case `escalation` reason=`no_candidates` (do not fail member book).
+
+SMS is a **notification adapter** stubbed in API (`NotificationPort.sendOffer`). Console Accept/Decline stand-in for phase-1.
+
+### A4. Lock / release / escalate (H10 race)
 
 | Event | Status / data | Who |
 |-------|---------------|-----|
-| Accept | → `booked`; lock appointment slot; withdraw other offers | contractor (or agent applying contractor reply) |
-| Decline / TTL | release candidate; continue wave | system / contractor |
-| Pool exhaust | flag `needs_ops_dispatch`; stay `dispatching` | system → **ops only** |
+| Accept | txn: lock request → fitness check (H18) → appointment → offer `accepted` → siblings `withdrawn` → `booked` | contractor (or agent applying inbound) |
+| Decline / TTL | release; continue wave | system / contractor |
+| Second accept | `409 OFFER_LOST` (first writer wins) | API |
+| Slot taken | `409 SLOT_CONFLICT` → fail this accept, continue wave / escalate | API |
+| Pool exhaust | case `escalation` `pool_exhaust`; stay `dispatching`; `dispatch_owner=ops` | system |
 
-**SLOT_CONFLICT** on lock → fail offer, continue or escalate (never silent).
-
-**Trackable acceptance:** console shows offers + wave state; accept → job leaves pool as `booked` with contractor + slot; second accept on same wave fails cleanly.
+**Trackable acceptance:** parallel double-accept → exactly one `booked`; other `OFFER_LOST`; slot exclusion enforced.
 
 ---
 
@@ -112,19 +116,19 @@ SMS is a **notification adapter** stubbed in API (`NotificationPort.sendOffer`).
 
 ### B1. Arrival solidification
 
-| Step | Who | Notes |
-|------|-----|-------|
-| B1.1 Propose exact arrival within window | agent or contractor | e.g. slot 10:00–10:30 inside preferred window |
-| B1.2 Contractor confirms arrival | contractor | required before `confirmed` |
-| B1.3 Persist appointment | API | `appointments.slot_start/end` authoritative |
+| Step | Who | API act | Notes |
+|------|-----|---------|-------|
+| B1.1 Propose exact arrival within window | agent or contractor | `propose_arrival` | writes/updates `appointments` provisional → firm |
+| B1.2 Contractor acks arrival | contractor | **`ack_arrival`** | required before confirm_visit |
+| B1.3 Appointment authoritative | API | | `appointments.slot_start/end` |
 
-### B2. Member confirmation (blind)
+### B2. Visit confirmation (blind) — not “member confirm”
 
-| Step | Who | Notes |
-|------|-----|-------|
-| B2.1 Transition → `confirmed` | agent/ops/system | only after arrival locked |
-| B2.2 Member notification | system | “Visit confirmed for {time}” — **no real name/photo of pro** if INV-2 still applies post-confirm per policy; use masked label (“Strech Pro”, confirmation code) |
-| B2.3 confirmation_code | API | already on request; surface everywhere |
+| Step | Who | API act | Notes |
+|------|-----|---------|-------|
+| B2.1 Flip → `confirmed` | agent/ops (policy) | **`confirm_visit`** | only after `ack_arrival` + locked appointment |
+| B2.2 Member notification | system | | masked pro label + time + `confirmation_code` |
+| B2.3 Create `charge` | system | | status `pending` — see §13 money rules |
 
 ### B3. Reminder cadence
 
@@ -134,9 +138,14 @@ SMS is a **notification adapter** stubbed in API (`NotificationPort.sendOffer`).
 | T-2h | member + contractor | |
 | T-30m | member + contractor | |
 
-Store `reminder_job` rows (request_id, fire_at, kind, status). System worker fires them; each fire → `job_event` note (timeline visibility).
+Store `reminder_job` rows (request_id, fire_at, kind, status). System worker fires them; each fire → `job_event` note.
 
-**Trackable acceptance:** booked job can set exact slot → confirmed; reminder rows visible in console; member-facing payload has zero contractor PII leakage in tests.
+**Reschedule rule (H16):** any slot change **cancels** all `scheduled` reminders for that request and inserts a fresh cadence from the new `slot_start`. Cancel/no_show also cancels pending reminders (no retraction SMS required in v1; optional later).
+
+**Timezone (H16):** all fire_at computed in **property local TZ** (stored on `properties.timezone`, default from zip→TZ table).
+
+**Trackable acceptance:** `ack_arrival` then `confirm_visit` → `confirmed` + pending charge + reminders; member payload passes INV-2 tests.
+
 
 ---
 
@@ -154,73 +163,80 @@ Map colloquial SMS → canonical transitions (API enforces; parser is adapter):
 | `arrived` | check-in | → `checked_in` |
 | `done` | complete | → `completed` |
 
-Prefer **explicit API actions** (`POST .../en-route`, `/check-in`, `/complete`) with SMS parser calling those. Do not let free-text alone mutate status without going through the same validators.
+Prefer **explicit API actions** (`POST .../en-route`, `/check-in`, `/complete`) with SMS parser calling those. Free-text never mutates status except via the allowlisted parser (§13 H11).
 
 ### C2. Member progress view (stub)
 
-Member sees timeline from `job_event`s, masked:
+Member sees timeline from `job_event`s, masked (INV-2):
 
-- Pro confirmed  
+- Visit confirmed  
 - On the way  
 - Arrived  
 - Work completed  
 
-### C3. Messy paths (first-class — not afterthoughts)
+### C3. Messy paths → **cases** (not ad-hoc flags alone)
 
-| Situation | Detection | System behavior | Escalate? |
-|-----------|-----------|-----------------|-----------|
-| **Running late** | contractor `late` + new ETA | event + member notify; update ETA | agent ok if ETA within policy; else ops |
-| **Can't find place** | contractor flag | event; share access notes (non-medical); optional call ops | ops if access/safety |
-| **Scope changed on site** | contractor `scope_change` | **do not auto-approve money**; open change-request / case | **ops** for price; agent may log only |
-| **Member not home** | contractor / no-show member | → `no_show` (party=homeowner) or wait policy | agent can mark no-show if allow-listed; payout rules ops |
-| **Needs a part** | `parts_hold` | stay `checked_in` (or substatus via events); schedule return visit | return visit = new request or linked follow-up |
-| **Needs reschedule** | either party | unassign slot → reschedule path; may return toward `booked`/`dispatching` | agent propose; ops if dispute |
-| **Contractor no-show** | timer past slot + no check-in | → `no_show` (party=contractor) → redispatch | ops if repeat offender |
-| **Safety / medical / sensor alert** | Home Health Score signal | **never agent** — emergency path + ops | **hard fence** |
+| Situation | API / signal | Case? | Behavior |
+|-----------|--------------|-------|----------|
+| **Running late** | `report_late` + ETA | no (flag+event) unless slip > policy | agent ok under `max_eta_slip_minutes`; else case `escalation` |
+| **Can't find place** | `cant_find` | case `escalation` if unresolved 15m | contractor gets `contractor_field` access notes only |
+| **Scope changed** | `scope_change` | case **`scope_change`** | agent may open case; **ops only** approves price → amend `charge` |
+| **Member not home** | `no_show` party=homeowner | case `no_show` | status → `no_show`; money per §13 cancel/no-show |
+| **Needs a part** | `parts_hold` | case `parts_hold` | stay `checked_in`; spawn **linked follow-up** request (§13 H14) |
+| **Needs reschedule** | `reschedule` | case `reschedule` if either party disputes | rewrite appointment; rewrite reminders |
+| **Contractor no-show** | system timer | case `no_show` | → `no_show` → redispatch; fitness strike |
+| **Safety / medical / HHS** | emergency ingress | case **`emergency`** | **never agent** — §13 H9 |
 
-**Substatus pattern:** keep `ServiceRequest.status` coarse; put nuance in `job_event` + optional `job_flags` (`late`, `parts_hold`, `scope_change`) so money/status stay clean.
+`job_flags` are denormalized hints for UI; **`cases` is the source of truth** for anything ops must own.
 
-**Trackable acceptance:** each messy path has an API action + console button + event; agent cannot authorize scope price changes; medical path returns 403 for agent.
+**Trackable acceptance:** each messy path opens the right case type or flag; agent 403 on scope price + emergency.
+
 
 ---
 
 ## 4. Flow D — Complete → Paid
 
-**Product intent:** Dual confirmation, capture member card, calculate contractor payout, close job, ask for review.
+**Product intent:** Contractor completes → system moves to review → capture money → payout held → member review → close. Money never becomes a job status.
 
-### D1. Dual completion confirmation
+### D1. Completion + review order (H4 + H7) — single machine
 
-| Step | Who | Artifact |
-|------|-----|----------|
-| D1.1 Contractor complete | contractor | status `completed` + summary |
-| D1.2 Member confirms work OK | member | event `member_completion_ack` → `needs_review` or stay completed pending policy |
-| D1.3 Dispute instead | member/ops | → `disputed` (not a refund status) |
+```text
+checked_in
+  → completed          # contractor complete (summary required)
+  → needs_review       # automatic on complete (system)
+  → reviewed           # member review submitted OR review_timeout (e.g. 72h)
+  → closed             # guards below
+```
 
-### D2. Money (separate ledger)
+| Act | Who | Name | Effect |
+|-----|-----|------|--------|
+| Finish work | contractor | `complete` | → `completed` then immediately → `needs_review` |
+| Say work was OK | member | **`ack_completion`** | `job_event` only (does **not** skip review); optional signal for payout release policy |
+| Star/comment review | member | `submit_review` | → `reviewed` |
+| Open fight | member/ops | opens case `dispute` | status → `disputed` (payout hold) |
 
-| Row | Meaning |
-|-----|---------|
-| `charge` | what member owes (tier may make `amount_cents = 0`) |
-| `payment_attempt` | card capture stub (processor port) |
-| `payout` | contractor earnings calculation |
-| `refund` | if case requires — **does not** set status=refunded |
+Member **does not** have a third “confirm” that means visit booking — that is `confirm_visit` in Flow B.
 
-Rules:
+### D2. Money ledger (H5 / H6) — fixed timing
 
-- Completion can exist before successful capture (visible failure, retry).  
-- Payout calculation is deterministic from category + tier + change-orders **approved by ops**.  
-- Agent **cannot** capture card, issue refund, or adjust payout — 403.
+| When | Charge | Capture | Payout |
+|------|--------|---------|--------|
+| `confirm_visit` | create `charge` `pending` (tier may be `$0`) | — | — |
+| ops approves `scope_change` | amend `charge.amount_cents` | — | — |
+| `complete` | finalize amount if needed | enqueue capture if amount > 0 | create `payout` `held` |
+| capture worker | — | `payment_attempt`; charge → `captured` \| `failed` | — |
+| `closed` (no open money-hold case) | must be `captured` or `amount_cents=0` or `voided` | retry failures visible to ops | payout → `payable` (processor stub) |
+| case `dispute` / `emergency` open | — | no auto-refund | stay `held` |
+| ops refund | new `refund` row; charge may stay `captured` | — | clawback/adjust payout |
 
-### D3. Review → close
+**Capture failure:** job can stay `needs_review`/`reviewed`; close **blocked** until ops voids, comps (`amount_cents=0` + note), or capture succeeds. Agent cannot capture/refund.
 
-| Step | Status |
-|------|--------|
-| Request review | `needs_review` + notify |
-| Member submits review | `reviewed` |
-| Review timeout policy | system auto-`reviewed` or ops nudge |
-| Settle + close | `closed` when charge settled (or $0) and no open dispute |
+**Close guards:** no open cases with `blocks_close=true`; charge terminal (`captured`|`voided`|$0); payout not `held` unless explicitly waived by ops.
 
-**Trackable acceptance:** completed job shows charge+payout rows in console; refund can be added while status stays completed/closed; review request visible; close blocked if open dispute.
+### D3. Trackable acceptance
+
+Console shows charge created at confirm; payout `held` at complete; review column; close rejected if dispute open or capture failed.
+
 
 ---
 
@@ -322,22 +338,22 @@ If the API returns **403**, agent must escalate — it never retries a denied ac
 
 - Read pool / agent work queue, score candidates, create/cancel offers  
 - Apply accept/decline from contractor channel  
-- Propose arrival time; trigger confirm **when policy + state machine allow**  
+- Propose arrival time; trigger **`confirm_visit`** when policy + `ack_arrival` allow  
 - Request reminder schedule (system fires)  
-- Parse field signals into en-route / check-in / complete **when unambiguous + state allows**  
-- Flag late / can’t-find / parts_hold (logging)  
+- Parse field signals into en-route / check-in / complete **via allowlist parser only**  
+- Open cases (`escalation`, `parts_hold`, `scope_change` log) — not resolve money  
 - Escalate to ops queue  
 - Read `agent_policy` (write policy = **ops only**)  
 
 **Deny (403 → human):**
 
 - Vetting approve/suspend, employment decisions  
-- Money: capture, refund, payout override, tip disputes  
-- Scope/price change approval  
-- Legal / damage / injury cases  
-- Home Health Score / medical / emergency  
-- Blind-booking bypass (any member payload with real contractor identity)  
-- Widening its own allow-list or policy past ops-set bounds  
+- Money: capture, refund, payout override, tip disputes, charge amend  
+- Scope/price change **approval**  
+- Resolve `emergency` / read medical payloads  
+- Legal / damage / injury outcomes  
+- Blind-booking bypass  
+- Widening allow-list or policy  
 - Anything ambiguous → deny/escalate  
 
 ---
@@ -383,16 +399,17 @@ Use these as tickets. Each has a crisp acceptance. Prefer API-first; console fol
 - [ ] Console Offer radar + accept/decline stand-in  
 
 ### WP3 — Confirm + reminders
-- [ ] Exact arrival set + → `confirmed`  
-- [ ] Masked member confirmation stub  
-- [ ] Reminder rows + worker (T-24/T-2/T-30)  
-- [ ] Console reminders on request desk  
-- [ ] `agent_policy` row + ops edit; agent auto-confirm path  
+- [ ] `ack_arrival` + `confirm_visit` (not overloaded `/confirm`)  
+- [ ] Charge `pending` created on `confirm_visit`  
+- [ ] Masked member notification stub  
+- [ ] Reminder rows + worker; rewrite on reschedule  
+- [ ] `agent_policy` + auto `confirm_visit` path  
+- [ ] `promise_by` from category×tier SLA  
 
 ### WP3b — Agent runtime (watch loop)
-- [ ] `GET /v1/agent/work` attention queue  
+- [ ] `GET /v1/agent/work` attention queue (excludes emergency)  
 - [ ] Agent tick worker (poll + event wakeup)  
-- [ ] Apply policy: offer waves, auto-confirm, escalate stuck/SLA  
+- [ ] Apply policy: offer waves, auto-confirm_visit, escalate stuck/SLA  
 - [ ] All agent actions as `job_event` with `actor_role=agent`  
 - [ ] Console Agent panel (queue + policy toggles)  
 - [ ] 403 on policy self-widen / money / medical  
@@ -400,30 +417,30 @@ Use these as tickets. Each has a crisp acceptance. Prefer API-first; console fol
 ### WP4 — Field loop
 - [ ] en-route / check-in / complete APIs  
 - [ ] Field console buttons  
-- [ ] SMS parser adapter stub → same APIs  
-- [ ] Member timeline projection from events  
+- [ ] SMS `reply_token` + allowlist parser stub  
+- [ ] Member timeline projection (redaction tier)  
 
-### WP5 — Messy paths
-- [ ] late + ETA  
-- [ ] cant_find  
-- [ ] scope_change → ops case (no auto money)  
-- [ ] member/contractor no_show + redispatch  
-- [ ] parts_hold + follow-up link  
-- [ ] reschedule / reassign  
+### WP5 — Messy paths + cases
+- [ ] `cases` table + console Cases  
+- [ ] late / cant_find / scope_change / no_show / parts_hold + child request  
+- [ ] `POST /v1/emergency` ingress + agent bypass  
+- [ ] cancel matrix + reminder cancel  
 - [ ] agent 403 tests on medical + money + scope approve  
 
 ### WP6 — Money + review + close
-- [ ] charge / payout / refund tables (no status pollution)  
-- [ ] payment capture stub + failure retry  
-- [ ] dual confirm + needs_review → reviewed  
-- [ ] close guards (dispute open? unsettled charge?)  
+- [ ] charge @ confirm_visit; capture @ complete; payout held→payable @ close  
+- [ ] `needs_review` auto on complete; review timeout 72h  
+- [ ] `ack_completion` + `submit_review`  
+- [ ] close guards; refund rows  
 - [ ] Console money + case panels  
 
 ### WP7 — Hardening
 - [ ] Idempotency keys on all writes  
-- [ ] SLOT_CONFLICT correctness  
+- [ ] OFFER_LOST + SLOT_CONFLICT + CONTRACTOR_UNFIT correctness  
+- [ ] PII serializer tier tests  
+- [ ] Fitness-at-accept tests  
 - [ ] Audit export of job_events  
-- [ ] Smoke: full happy path + one messy path + one money path  
+- [ ] Smoke: happy path + messy path + money path + emergency bypass  
 
 ---
 
@@ -449,6 +466,12 @@ Stub the ports; keep the state machine and audit trail real.
 
 ---
 
+## 11. Suggested next step
+
+Implement **WP0 → WP1 → WP2** until Offer radar can lock a job from the pool in the console. That is the first vertical slice of Flow A and unblocks everything else. Close **H1–H3, H12, H13** before that slice so you don’t rebuild the spine twice.
+
+---
+
 ## 12. Holes — unresolved decisions & missing machinery
 
 These are the gaps. Do not paper over them in code; decide or ticket explicitly.
@@ -468,46 +491,29 @@ Domain says mask before *and per policy after* confirm. Plan hedges. Need a hard
 - after `confirmed`, member sees limited identity for safety (name + photo + ETA).  
 Serializer tests cannot be written until this is fixed.
 
-### H4 — “Confirm” means three different things
-Overloaded word:
-1. Contractor acks exact arrival  
-2. Agent/ops flips status → `confirmed` + member notify  
-3. Member “confirms work OK” after complete  
-Name them apart in API (`ack_arrival`, `confirm_visit`, `ack_completion`) or ops will mis-wire buttons.
+### H4 — “Confirm” means three different acts
+**RESOLVED → §13.** Acts are `ack_arrival`, `confirm_visit`, `ack_completion` (+ `submit_review`).
 
 ### H5 — Charge lifecycle timing
-When is `charge` created? At book, at confirm, or at complete?  
-When is card captured relative to contractor `complete` and member ack?  
-What if capture fails but work is done? (plan says retry — no aging, no ops SLA, no “comp the visit” path.)  
-Membership tier → $0 included visit rules not specified beyond a sentence.
+**RESOLVED → §13.** Charge at `confirm_visit`; capture on `complete`; close blocked on failure.
 
 ### H6 — Payout vs close ordering
-Can `closed` happen before payout row is `paid`/`scheduled`?  
-What if dispute opens after capture but before payout? Hold? Clawback?  
-Agent denied — but **ops playbook** for money states is missing.
+**RESOLVED → §13.** Payout `held` at complete → `payable` at close; dispute holds payout.
 
 ### H7 — Dual-confirm vs `needs_review` sequence
-D1 says member ack → `needs_review` *or* stay completed. That’s two products. Pick one state machine:
-- `completed` → (member ack | timeout) → `needs_review` → `reviewed` → `closed`, or  
-- `completed` → `needs_review` automatically, review is the member act.  
+**RESOLVED → §13.** `complete` → `completed` → auto `needs_review` → `reviewed` → `closed`.
 
 ### H8 — Case model is underspecified
-`disputed` / `resolved`, change-requests, scope_change flags, escalation queue — four overlapping concepts. Need one **case** entity (or explicit mapping) with owner, reason codes, money impact, and which statuses it may attach to.
+**RESOLVED → §13.** Single `cases` table; change-requests and escalations are case types.
 
 ### H9 — Emergency / Home Health Score ingress
-Invariant says medical never hits the agent — but there is **no intake path**: webhook? sensor service? ops panic button?  
-Without an ingress + `emergency` case type that bypasses agent work queue, the fence is theoretical.
+**RESOLVED → §13.** `POST /v1/emergency` (+ per-request panic); case `emergency`; agent queue bypass.
 
 ### H10 — Offer race & capacity truth
-Parallel first-accept-wins needs DB-level exclusivity (transaction / row lock / unique partial index).  
-Availability model is fuzzy: recurring windows vs concrete slots vs soft “load count.”  
-Empty candidate set at intake (no vetted pro in zip) — fail at book vs sit in pool forever?
+**RESOLVED → §13.** Slot rows + txn lock + `OFFER_LOST`/`SLOT_CONFLICT`; empty pool → escalation case.
 
 ### H11 — SMS identity & threading
-How does an inbound text map to `(contractor_id, service_request_id)`?  
-One phone, many jobs? Wrong-job apply risk.  
-Parser confidence threshold undefined (“unambiguous” is not a spec).  
-Failed send / carrier delay vs offer TTL = silent miss.
+**RESOLVED → §13.** `reply_token` + allowlist parser; else ambiguous escalation.
 
 ### H12 — Agent runtime hosting
 Where does the tick process live? Inside `strech-dispatch-api` workers? Separate `strech-dispatch-agent` service?  
@@ -521,30 +527,22 @@ Need lock: `dispatch_owner = agent|ops`, or cancel open offers on ops takeover.
 Otherwise duplicate assigns / SLOT_CONFLICT storms.
 
 ### H14 — Follow-up / parts / multi-day work
-`parts_hold` → “new request or linked follow-up” — undecided.  
-Same contractor obligated? New offer wave? Money on which `service_request_id`?  
-Partial complete (fixed A, deferred B) not modeled.
+**RESOLVED → §13.** Child request via `parent_request_id`; direct re-offer same pro.
 
 ### H15 — Cancellation & money
-Who can cancel in which statuses; refund vs void vs no charge; contractor kill-fee — unset.  
-Member cancel after `confirmed` is the common trust case — no policy.
+**RESOLVED → §13.** Status×who matrix; void pending charge; no cancel after completed (use dispute/refund).
 
 ### H16 — Reminder edge cases
-Timezone of property vs contractor.  
-Reschedule must **cancel/rewrite** reminder rows (not said).  
-Job cancelled after T-24h already sent — no retraction story.
+**RESOLVED → §13.** Property TZ; cancel+rewrite on reschedule; cancel pending on terminal.
 
 ### H17 — Access / elderly / PII in `details`
-Gate codes, lockboxes, “member has dementia,” pets — needed on site, dangerous in SMS and in agent context.  
-No redaction tiers (ops-only vs contractor-visible vs member timeline).
+**RESOLVED → §13.** Tiers: `member_public` / `contractor_field` / `ops_only` / `agent_context`.
 
 ### H18 — Contractor fitness over time
-Vetting approved once; what about insurance expiry, suspend mid-offer-wave, rating collapse?  
-Assignable query must re-check fitness at **accept time**, not only at score time (mentioned loosely via vetted-only, not expiry).
+**RESOLVED → §13.** Re-check vetting, suspend, insurance expiry at accept txn.
 
 ### H19 — SLA `promise_by`
-Set how? Tier-based? Category-based?  
-Breach → escalate only, or auto-comp, or cancel? Unspecified.
+**RESOLVED → §13.** `created_at + sla_hours(category, tier)`; breach → escalation case only.
 
 ### H20 — Console “done test” vs product four flows
 Done test is desk-driven loop. Product flows assume agent + SMS + card capture.  
@@ -559,10 +557,152 @@ Current `strech-ops-console` has no Offer radar, Agent panel, money panel, cases
 3. **H3** INV-2 post-confirm  
 4. **H13** ops vs agent ownership  
 5. **H12** where dispatch-api + agent worker live  
-6. **H5/H7** money + review state order  
+
+**Resolved this pass:** H4–H11, H14–H19 → see **§13**.
 
 ---
 
-## 11. Suggested next step
+## 13. Hole fixes — locked decisions (H4–H11, H14–H19)
 
-Implement **WP0 → WP1 → WP2** until Offer radar can lock a job from the pool in the console. That is the first vertical slice of Flow A and unblocks everything else.
+### H4 — Three acts, three names (never call them all “confirm”)
+
+| Act | Endpoint (canonical) | Who | When |
+|-----|----------------------|-----|------|
+| **`ack_arrival`** | `POST /requests/{id}/ack-arrival` | contractor | after proposed slot; required before visit confirm |
+| **`confirm_visit`** | `POST /requests/{id}/confirm-visit` | agent/ops | → `confirmed`; creates pending `charge`; schedules reminders |
+| **`ack_completion`** | `POST /requests/{id}/ack-completion` | member | after `completed`; timeline event only |
+| **`submit_review`** | `POST /requests/{id}/review` | member | → `reviewed` |
+
+Deprecate overloaded `/confirm` in new code; alias only if legacy smoke needs it.
+
+### H5 / H6 / H7 — Money + review order
+
+**Review machine (only one):**  
+`complete` → `completed` → *(system)* → `needs_review` → `reviewed` (member review or 72h timeout) → `closed`
+
+**Money timing:**
+
+1. **`confirm_visit`** → insert `charge` (`pending`, amount from category + membership tier; included visit = `0`)  
+2. **Ops approves scope_change case** → amend charge amount  
+3. **`complete`** → finalize charge; create `payout` (`held`); enqueue capture if amount > 0  
+4. **Capture worker** → `payment_attempt`; charge `captured` or `failed` (retry w/ backoff; surface on Cases)  
+5. **`closed`** allowed iff: no `blocks_close` cases AND charge in (`captured`|`voided`) or amount 0 AND payout moved `held` → `payable` (or ops waiver)  
+6. **Dispute/emergency open** → payout stays `held`; refunds are separate `refund` rows (status unchanged)
+
+### H8 — Single `cases` model
+
+```text
+cases
+  id, service_request_id, type, status (open|resolved|dismissed),
+  reason_code, owner_role (ops|system), blocks_close bool,
+  money_impact (none|amend_charge|refund|hold_payout),
+  created_at, resolved_at, meta jsonb
+```
+
+**Types:** `escalation` | `scope_change` | `reschedule` | `no_show` | `parts_hold` | `dispute` | `emergency` | `cancel_request`
+
+- Legacy “change-request” = case `scope_change` or `reschedule`  
+- Escalation queue = `cases` where `type=escalation` and `status=open`  
+- `job_flags` = optional cache for UI; opening/resolving a case syncs flags  
+- Status `disputed` / `resolved` on the request are for dispute/emergency arcs; other cases may not change primary status
+
+### H9 — Emergency / HHS ingress
+
+| Ingress | Path |
+|---------|------|
+| Sensor / HHS service | `POST /v1/emergency` with `property_id` or `homeowner_id` + `signal_type` + `payload` (system HMAC) |
+| Ops panic | same endpoint as `role=ops` |
+| Contractor “member in danger” | `POST /requests/{id}/emergency` → same case pipeline |
+
+**Behavior:** create case `emergency` (`blocks_close=true`, `money_impact=hold_payout`); set request flag; **remove from agent work queue**; page ops; write `job_event`. Agent calling emergency APIs except “create via contractor panic” read path → 403 on resolve/money. Medical payload never included in agent prompt/context serializers.
+
+### H10 — First-accept + slots
+
+- Availability = concrete `availability_slots`  
+- Accept runs in a DB transaction with `SELECT … FOR UPDATE` on `service_requests`  
+- Partial unique index: one `accepted` offer per request  
+- Exclusion constraint / overlap check on `appointments(contractor_id, slot_start, slot_end)`  
+- Conflicts: `OFFER_LOST` | `SLOT_CONFLICT` | `CONTRACTOR_UNFIT` — never silent  
+
+### H11 — SMS threading + unambiguous parser
+
+**Outbound:** every offer/field prompt SMS includes `reply_token` (short code, e.g. `AB7K`) + maps to `(contractor_id, service_request_id, purpose)`.
+
+**Inbound resolution order:**
+1. Token in message body → exact job  
+2. Else contractor’s single active context (one pending offer OR one job in `confirmed|checked_in`)  
+3. Else → case `escalation` `ambiguous_sms` (do not mutate)
+
+**Unambiguous parser (v1 = allowlist only, no LLM status writes):**
+
+| Purpose | Allowed bodies (normalized) | API |
+|---------|----------------------------|-----|
+| offer | `YES` / `NO` + token | accept / decline |
+| field | `OTW` / `ARRIVED` / `DONE` + token | en-route / check-in / complete |
+| late | `LATE <minutes>` + token | report_late |
+
+Anything else → escalate. Failed outbound send → mark offer `channel_failed`, do not burn full TTL silently (alert agent tick).
+
+### H14 — Parts / follow-up
+
+`parts_hold` case on parent request (stays `checked_in`).  
+System creates **child** `service_requests` row: `parent_request_id`, `dispatching`, category same, window from contractor proposal.  
+First offer wave = **direct** to same contractor (skip full pool) if still fit; decline → normal pool.  
+Money: child has its own `charge`; parent charge unchanged unless ops amends.  
+Partial complete: contractor `complete` with `deferred_items[]` → auto-open `parts_hold` + child if non-empty.
+
+### H15 — Cancel + money
+
+| Status when cancel | Who | Charge | Payout | Result |
+|--------------------|-----|--------|--------|--------|
+| `dispatching` | member/ops | none | — | `cancelled` |
+| `booked` | member/ops | none | — | `cancelled`; release slot; withdraw offers |
+| `confirmed` / `checked_in` | member | pending → `voided` (v1 no kill-fee; ops may add later) | — | `cancelled`; cancel reminders |
+| `confirmed` / `checked_in` | ops | void or amend | — | `cancelled` |
+| `completed`+ | — | use `refund` + case `dispute`, not cancel | hold/adjust | not `cancelled` |
+
+Open case `cancel_request` when member asks and policy needs ops eyes (e.g. <2h to slot).
+
+### H16 — Reminders on reschedule/cancel
+
+- Source of truth: `reminder_jobs`  
+- On `confirm_visit`: insert T-24/T-2/T-30 from appointment `slot_start` in **property.timezone**  
+- On reschedule / new `slot_start`: set old rows `cancelled`, insert new set  
+- On cancel / no_show / terminal: cancel pending rows  
+- v1: no “retraction” SMS for already-sent reminders  
+
+### H17 — PII redaction tiers
+
+| Tier | Sees | Examples |
+|------|------|----------|
+| `member_public` | member timeline/API | status, masked pro, ETA, confirmation_code — **no** gate code, no medical, no contractor PII |
+| `contractor_field` | contractor job payload | address, access notes, pet notes, contact phone — **no** HHS/medical, no billing |
+| `ops_only` | ops console | full details, medical flags refs, billing, emergency payloads |
+| `agent_context` | agent serializers | same as ops minus medical/emergency payload bodies + minus raw card data |
+
+Store sensitive keys in `details` under namespaced keys (`access.*`, `safety.*`); serializers filter by tier. SMS never includes `ops_only` or `safety.*`.
+
+### H18 — Fitness at accept (not only at score)
+
+Accept rejects with `CONTRACTOR_UNFIT` unless all true **at accept time**:
+
+- `vetting_status = approved`  
+- not suspended  
+- `insurance_expires_at > slot_end` (if required for category)  
+- category + zip still match  
+- no overlapping appointment  
+
+Scoring uses the same predicate so the list doesn’t lie; accept re-checks inside the txn.
+
+### H19 — `promise_by` rules
+
+```text
+promise_by = created_at + sla_hours(category_id, membership_tier)
+```
+
+- Base hours from `category_sla_hours` (e.g. HVAC 24h, landscaping 72h)  
+- Tier may shorten (Premium < Comfort < Free)  
+- **Breach:** open case `escalation` reason=`sla_breach`; notify ops; **no** auto-cancel, **no** auto-comp in v1  
+- Agent: prioritize breached jobs in work queue; cannot close the SLA case  
+
+---
