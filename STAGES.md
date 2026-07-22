@@ -20,7 +20,7 @@ Do not start the next stage without **go**.
 | **1** | Locked desk shell | ✅ **DONE** — password login, sealed cookies, middleware lock, Overview, Vercel-ready |
 | **2** | Dispatch API spine | ✅ **DONE** — `/v1` health, schema, status engine, `job_event`, INV-2 serializer |
 | **3** | Book → Pool | ✅ **DONE** — seed/create → live Pool + Overview |
-| **4** | Offers → Booked | Scoring, offer waves, Accept/Decline, Offer radar, Board |
+| **4** | Offers → Booked | ✅ **DONE** — scoring, waves, accept race, Offer radar, Board |
 | **5** | Confirm + reminders + charge | `ack_arrival`, `confirm_visit`, pending charge, reminders on desk |
 | **6** | Agent runtime | Work queue, policy toggles, tick worker, Agent panel |
 | **7** | Field loop | Check-in / complete, timeline progress |
@@ -58,6 +58,18 @@ Do not start the next stage without **go**.
 - [x] Agent can read pool; cannot seed
 - [x] Console Overview + Pool live counts + Seed button
 - [x] `npm run smoke:pool` passes
+
+## Stage 4 acceptance
+
+- [x] Migration `002_offers.sql` — waves, offers, one-accepted unique index, cases stub
+- [x] Scoring: vetted + zip/category + load + accept rate + overlapping free slot
+- [x] Offer waves (sequential / parallel_batch) + TTL; empty → escalate to ops
+- [x] Accept locks **request first** (H10); dual-accept → first wins, loser `OFFER_LOST`
+- [x] `SLOT_CONFLICT` / unfit **persist** withdraw (commit, not rollback)
+- [x] Agent fence: `OWNED_BY_OPS` on wave/accept; agent allow-listed for wave/accept/decline
+- [x] Accept → `booked` + `job_event` via `transitionStatus`
+- [x] Console Offer radar + Board with canonical status columns
+- [x] `npm run smoke:offers` passes
 
 ## Core directives (every stage)
 

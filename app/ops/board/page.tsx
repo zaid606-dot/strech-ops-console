@@ -7,12 +7,12 @@ import type { ServiceRequest } from '@/lib/dispatch/types';
 
 const QUEUE_ORDER = [
   'dispatching',
-  'assigned',
-  'scheduled',
+  'booked',
   'confirmed',
-  'in_progress',
+  'checked_in',
   'needs_review',
   'no_show',
+  'disputed',
 ] as const;
 
 export default function BoardPage() {

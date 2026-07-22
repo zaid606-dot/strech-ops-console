@@ -28,16 +28,22 @@ const AGENT_ALLOW_EXACT = new Set<string>([
   'GET /v1/health',
   'GET /v1/meta/statuses',
   'GET /v1/pool',
+  'GET /v1/offers',
+  'GET /v1/contractors/available',
 ]);
 
-const AGENT_ALLOW_PREFIX: string[] = [
-  // Stage 4+ may expand; Stage 3 keeps agent read-only on pool/meta
-];
+const AGENT_ALLOW_PREFIX: string[] = [];
 
 export function assertAgentAllowed(method: string, path: string, role: Actor['role']) {
   if (role !== 'agent') return;
   const key = `${method.toUpperCase()} ${path}`;
   if (AGENT_ALLOW_EXACT.has(key)) return;
+  if (method.toUpperCase() === 'POST' && /\/v1\/requests\/[^/]+\/offer-wave$/.test(path)) {
+    return;
+  }
+  if (method.toUpperCase() === 'POST' && /\/v1\/offers\/[^/]+\/(accept|decline)$/.test(path)) {
+    return;
+  }
   for (const prefix of AGENT_ALLOW_PREFIX) {
     if (key.startsWith(prefix)) return;
   }

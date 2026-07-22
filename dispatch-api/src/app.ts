@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { type Env, requireActor } from './auth/actor.js';
 import { createServiceRequest } from './domain/requests.js';
 import { pool } from './db/pool.js';
+import { registerOfferRoutes } from './routes/offers.js';
 import { memberPublicRequest } from './serializers/member.js';
 import { STATUSES } from './status/transitions.js';
 
@@ -27,18 +28,56 @@ export function buildApp() {
   const v1 = new Hono<Env>();
   v1.use('*', requireActor);
 
+  registerOfferRoutes(v1);
+
   v1.get('/health', (c) => {
     const actor = c.get('actor');
     return c.json({
       ok: true,
       service: 'strech-dispatch-api',
-      stage: 3,
+      stage: 4,
       actor_role: actor.role,
     });
   });
 
   v1.get('/meta/statuses', (c) => {
     return c.json({ items: STATUSES });
+  });
+
+  v1.get('/board', async (c) => {
+    const actor = c.get('actor');
+    if (actor.role !== 'ops' && actor.role !== 'system') {
+      return c.json({ error: 'forbidden' }, 403);
+    }
+    const statuses = [
+      'dispatching',
+      'booked',
+      'confirmed',
+      'checked_in',
+      'needs_review',
+      'no_show',
+      'disputed',
+    ];
+    const { rows } = await pool.query(
+      `SELECT * FROM service_requests
+       WHERE status = ANY ($1::service_request_status[])
+       ORDER BY updated_at DESC
+       LIMIT 300`,
+      [statuses],
+    );
+    const queues: Record<string, unknown[]> = {};
+    const counts: Record<string, number> = {};
+    for (const s of statuses) {
+      queues[s] = [];
+      counts[s] = 0;
+    }
+    for (const row of rows) {
+      const s = row.status as string;
+      if (!queues[s]) continue;
+      queues[s].push(row);
+      counts[s] += 1;
+    }
+    return c.json({ queues, counts });
   });
 
   v1.get('/overview', async (c) => {
