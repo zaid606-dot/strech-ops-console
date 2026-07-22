@@ -1,6 +1,6 @@
 # Strech dispatch — what you're building
 
-Read this before writing code. This is the domain and the rules — the *why* and the *what*. The *how* (build order, tasks, per-task acceptance) lives in `cursor-dispatch-brief.md` when present.
+Read this before writing code. This is the domain and the rules — the *why* and the *what*. The *how* (build order, tasks, per-task acceptance) lives in `cursor-dispatch-brief.md`.
 
 ---
 
