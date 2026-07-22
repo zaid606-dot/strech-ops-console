@@ -449,6 +449,120 @@ Stub the ports; keep the state machine and audit trail real.
 
 ---
 
+## 12. Holes — unresolved decisions & missing machinery
+
+These are the gaps. Do not paper over them in code; decide or ticket explicitly.
+
+### H1 — Status vocabulary drift (blocking)
+Plan uses `booked` / `checked_in`. Legacy console/API smoke used `scheduled` / `assigned` / `in_progress`. **One canonical enum must win** before WP0. Every client and transition table depends on it.
+
+### H2 — When does the appointment row exist?
+Accept → `booked` locks a slot, but B1 still “proposes exact arrival.” Unclear whether:
+- (a) accept locks a **provisional** window and confirm writes final `appointments` row, or  
+- (b) accept already writes `appointments` and confirm only flips status + notifies.  
+Race rules (SLOT_CONFLICT, withdraw siblings) differ. **Decide in WP2.**
+
+### H3 — INV-2 after confirmation (policy undecided)
+Domain says mask before *and per policy after* confirm. Plan hedges. Need a hard rule:
+- member never sees legal name/photo/phone, **or**
+- after `confirmed`, member sees limited identity for safety (name + photo + ETA).  
+Serializer tests cannot be written until this is fixed.
+
+### H4 — “Confirm” means three different things
+Overloaded word:
+1. Contractor acks exact arrival  
+2. Agent/ops flips status → `confirmed` + member notify  
+3. Member “confirms work OK” after complete  
+Name them apart in API (`ack_arrival`, `confirm_visit`, `ack_completion`) or ops will mis-wire buttons.
+
+### H5 — Charge lifecycle timing
+When is `charge` created? At book, at confirm, or at complete?  
+When is card captured relative to contractor `complete` and member ack?  
+What if capture fails but work is done? (plan says retry — no aging, no ops SLA, no “comp the visit” path.)  
+Membership tier → $0 included visit rules not specified beyond a sentence.
+
+### H6 — Payout vs close ordering
+Can `closed` happen before payout row is `paid`/`scheduled`?  
+What if dispute opens after capture but before payout? Hold? Clawback?  
+Agent denied — but **ops playbook** for money states is missing.
+
+### H7 — Dual-confirm vs `needs_review` sequence
+D1 says member ack → `needs_review` *or* stay completed. That’s two products. Pick one state machine:
+- `completed` → (member ack | timeout) → `needs_review` → `reviewed` → `closed`, or  
+- `completed` → `needs_review` automatically, review is the member act.  
+
+### H8 — Case model is underspecified
+`disputed` / `resolved`, change-requests, scope_change flags, escalation queue — four overlapping concepts. Need one **case** entity (or explicit mapping) with owner, reason codes, money impact, and which statuses it may attach to.
+
+### H9 — Emergency / Home Health Score ingress
+Invariant says medical never hits the agent — but there is **no intake path**: webhook? sensor service? ops panic button?  
+Without an ingress + `emergency` case type that bypasses agent work queue, the fence is theoretical.
+
+### H10 — Offer race & capacity truth
+Parallel first-accept-wins needs DB-level exclusivity (transaction / row lock / unique partial index).  
+Availability model is fuzzy: recurring windows vs concrete slots vs soft “load count.”  
+Empty candidate set at intake (no vetted pro in zip) — fail at book vs sit in pool forever?
+
+### H11 — SMS identity & threading
+How does an inbound text map to `(contractor_id, service_request_id)`?  
+One phone, many jobs? Wrong-job apply risk.  
+Parser confidence threshold undefined (“unambiguous” is not a spec).  
+Failed send / carrier delay vs offer TTL = silent miss.
+
+### H12 — Agent runtime hosting
+Where does the tick process live? Inside `strech-dispatch-api` workers? Separate `strech-dispatch-agent` service?  
+Who mints `role=agent` JWTs in prod?  
+Idempotency if two ticks run on the same job.  
+**No repo for dispatch-api in this workspace** — greenfield hole for the source of truth itself.
+
+### H13 — Ops + agent double-driving
+Can ops manually book while agent is mid-wave?  
+Need lock: `dispatch_owner = agent|ops`, or cancel open offers on ops takeover.  
+Otherwise duplicate assigns / SLOT_CONFLICT storms.
+
+### H14 — Follow-up / parts / multi-day work
+`parts_hold` → “new request or linked follow-up” — undecided.  
+Same contractor obligated? New offer wave? Money on which `service_request_id`?  
+Partial complete (fixed A, deferred B) not modeled.
+
+### H15 — Cancellation & money
+Who can cancel in which statuses; refund vs void vs no charge; contractor kill-fee — unset.  
+Member cancel after `confirmed` is the common trust case — no policy.
+
+### H16 — Reminder edge cases
+Timezone of property vs contractor.  
+Reschedule must **cancel/rewrite** reminder rows (not said).  
+Job cancelled after T-24h already sent — no retraction story.
+
+### H17 — Access / elderly / PII in `details`
+Gate codes, lockboxes, “member has dementia,” pets — needed on site, dangerous in SMS and in agent context.  
+No redaction tiers (ops-only vs contractor-visible vs member timeline).
+
+### H18 — Contractor fitness over time
+Vetting approved once; what about insurance expiry, suspend mid-offer-wave, rating collapse?  
+Assignable query must re-check fitness at **accept time**, not only at score time (mentioned loosely via vetted-only, not expiry).
+
+### H19 — SLA `promise_by`
+Set how? Tier-based? Category-based?  
+Breach → escalate only, or auto-comp, or cancel? Unspecified.
+
+### H20 — Console “done test” vs product four flows
+Done test is desk-driven loop. Product flows assume agent + SMS + card capture.  
+Without stubs that **look real in console** (offer accept, fake SMS inbound, fake payment_attempt), holes H5/H11 stay invisible until late.
+
+### H21 — Legacy console mismatch
+Current `strech-ops-console` has no Offer radar, Agent panel, money panel, cases, or `booked`/`checked_in` gates. Rebuild vs patch is undecided under “start fresh.”
+
+### Priority to close first (before coding past WP2)
+1. **H1** status enum  
+2. **H2** appointment timing  
+3. **H3** INV-2 post-confirm  
+4. **H13** ops vs agent ownership  
+5. **H12** where dispatch-api + agent worker live  
+6. **H5/H7** money + review state order  
+
+---
+
 ## 11. Suggested next step
 
 Implement **WP0 → WP1 → WP2** until Offer radar can lock a job from the pool in the console. That is the first vertical slice of Flow A and unblocks everything else.
