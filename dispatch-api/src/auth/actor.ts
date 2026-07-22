@@ -24,17 +24,23 @@ function actorSecret(): Uint8Array {
 
 const ROLES = new Set(['member', 'ops', 'contractor', 'system', 'agent']);
 
-/** Paths the agent role may call (method + pathname without query). */
-const AGENT_ALLOW = new Set<string>([
+const AGENT_ALLOW_EXACT = new Set<string>([
   'GET /v1/health',
   'GET /v1/meta/statuses',
   'GET /v1/pool',
 ]);
 
+const AGENT_ALLOW_PREFIX: string[] = [
+  // Stage 4+ may expand; Stage 3 keeps agent read-only on pool/meta
+];
+
 export function assertAgentAllowed(method: string, path: string, role: Actor['role']) {
   if (role !== 'agent') return;
   const key = `${method.toUpperCase()} ${path}`;
-  if (AGENT_ALLOW.has(key)) return;
+  if (AGENT_ALLOW_EXACT.has(key)) return;
+  for (const prefix of AGENT_ALLOW_PREFIX) {
+    if (key.startsWith(prefix)) return;
+  }
   const err = new Error('AGENT_FORBIDDEN') as Error & { status: number; code: string };
   err.status = 403;
   err.code = 'AGENT_FORBIDDEN';
@@ -72,9 +78,8 @@ export const requireActor = createMiddleware<Env>(async (c, next) => {
   }
 
   try {
-    // c.req.path is under the mounted /v1 app — rebuild full path
-    const fullPath = `/v1${c.req.path === '/' ? '' : c.req.path}`;
-    assertAgentAllowed(c.req.method, fullPath, c.get('actor').role);
+    const path = new URL(c.req.url).pathname;
+    assertAgentAllowed(c.req.method, path, c.get('actor').role);
   } catch (e) {
     const err = e as Error & { status?: number; code?: string };
     if (err.status === 403) {

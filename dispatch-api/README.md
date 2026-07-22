@@ -15,15 +15,24 @@ npm run smoke:spine
 npm run dev   # :3001
 ```
 
-## Endpoints (Stage 2)
+## Endpoints (Stage 3)
 
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/api/ready` | DB ping (no auth) |
 | GET | `/v1/health` | Edge + actor JWT |
 | GET | `/v1/meta/statuses` | Canonical status enum |
+| GET | `/v1/overview` | Ops counts |
 | GET | `/v1/pool` | `dispatching` jobs (ops/agent) |
-| GET | `/v1/requests/:id/member-view` | INV-2 masked projection |
+| POST | `/v1/requests` | Member/ops book → pool |
+| POST | `/v1/ops/seed-request` | Ops demo seed |
+| GET | `/v1/requests/:id` | Role-scoped |
+| GET | `/v1/requests/:id/member-view` | INV-2 masked |
+| GET | `/v1/requests/:id/events` | Audit timeline |
+
+```bash
+npm run smoke:pool
+```
 
 Auth: `Authorization: Bearer <EDGE_BEARER_TOKEN>` + `X-Strech-Actor: <JWT role+sub>`.
 

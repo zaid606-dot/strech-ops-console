@@ -18,9 +18,11 @@ export default function PoolPage() {
   const [items, setItems] = useState<ServiceRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/ops/pool');
@@ -34,13 +36,35 @@ export default function PoolPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load pool');
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   }, []);
 
+  async function seed() {
+    setSeeding(true);
+    setSeedMsg(null);
+    setError(null);
+    try {
+      const res = await fetch('/api/ops/seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category_id: 'hvac', membership_tier: 'Comfort' }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.detail ?? body.error ?? `Seed failed (${res.status})`);
+        return;
+      }
+      setSeedMsg(`Seeded ${body.request?.confirmation_code ?? 'ok'}`);
+      await load({ quiet: true });
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   useEffect(() => {
     void load();
-    const t = setInterval(() => void load(), 15000);
+    const t = setInterval(() => void load({ quiet: true }), 15000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -61,10 +85,22 @@ export default function PoolPage() {
             Requests in <span className="mono">dispatching</span>, unassigned. Auto-refresh 15s.
           </p>
         </div>
-        <button type="button" onClick={() => void load()} disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="primary"
+            type="button"
+            onClick={() => void seed()}
+            disabled={loading || seeding}
+          >
+            {seeding ? 'Seeding…' : 'Seed request'}
+          </button>
+          <button type="button" onClick={() => void load()} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
+
+      {seedMsg ? <p className="ok">{seedMsg}</p> : null}
 
       {error ? <p className="err">{error}</p> : null}
 

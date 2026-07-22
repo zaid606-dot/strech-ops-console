@@ -1,19 +1,97 @@
+'use client';
+
 import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
 
-import { getOpsSession } from '@/lib/auth/ops';
+type Overview = {
+  dispatching: number;
+  booked: number;
+  confirmed: number;
+  checked_in: number;
+  sla_breach: number;
+};
 
-export default async function OverviewPage() {
-  const session = await getOpsSession();
+export default function OverviewPage() {
+  const [data, setData] = useState<Overview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const res = await fetch('/api/ops/overview');
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.detail ?? body.error ?? `Overview failed (${res.status})`);
+        setData(null);
+        return;
+      }
+      setData(body);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load overview');
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 8000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function seed() {
+    setBusy(true);
+    setSeedMsg(null);
+    setError(null);
+    try {
+      const res = await fetch('/api/ops/seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category_id: 'hvac', membership_tier: 'Comfort' }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.detail ?? body.error ?? `Seed failed (${res.status})`);
+        return;
+      }
+      setSeedMsg(`Seeded ${body.request?.confirmation_code ?? body.request?.id}`);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const tiles = [
+    { label: 'Dispatching', href: '/ops/pool', value: data?.dispatching, color: 'var(--warn)' },
+    { label: 'Booked', href: '/ops/board', value: data?.booked, color: 'var(--accent)' },
+    { label: 'Confirmed', href: '/ops/board', value: data?.confirmed, color: 'var(--ok)' },
+    { label: 'SLA breach', href: '/ops/pool', value: data?.sla_breach, color: 'var(--danger)' },
+  ];
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
-      <div>
-        <h1 style={{ margin: 0, fontSize: 22 }}>Overview</h1>
-        <p className="muted" style={{ margin: '4px 0 0' }}>
-          Signed in as <span className="mono">{session?.username}</span>. Stage 1 shell —
-          live metrics land in Stage 3+.
-        </p>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 12,
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22 }}>Overview</h1>
+          <p className="muted" style={{ margin: '4px 0 0' }}>
+            Live dispatch counts from <span className="mono">/v1</span>. Auto-refresh 8s.
+          </p>
+        </div>
+        <button className="primary" type="button" disabled={busy} onClick={() => void seed()}>
+          {busy ? 'Seeding…' : 'Seed request'}
+        </button>
       </div>
+
+      {error ? <p className="err">{error}</p> : null}
+      {seedMsg ? <p className="ok">{seedMsg}</p> : null}
 
       <div
         style={{
@@ -22,12 +100,7 @@ export default async function OverviewPage() {
           gap: 12,
         }}
       >
-        {[
-          { label: 'Dispatching', href: '/ops/pool', value: '—' },
-          { label: 'Board', href: '/ops/board', value: '—' },
-          { label: 'Contractors', href: '/ops/contractors', value: '—' },
-          { label: 'Cases', href: '/ops', value: '0', note: 'Stage 8' },
-        ].map((tile) => (
+        {tiles.map((tile) => (
           <Link
             key={tile.label}
             href={tile.href}
@@ -45,14 +118,16 @@ export default async function OverviewPage() {
             <span className="muted" style={{ fontSize: 12 }}>
               {tile.label}
             </span>
-            <span style={{ fontSize: 28, fontWeight: 600, fontFamily: 'var(--mono)' }}>
-              {tile.value}
+            <span
+              style={{
+                fontSize: 28,
+                fontWeight: 600,
+                fontFamily: 'var(--mono)',
+                color: tile.color,
+              }}
+            >
+              {tile.value ?? '—'}
             </span>
-            {tile.note ? (
-              <span className="muted" style={{ fontSize: 11 }}>
-                {tile.note}
-              </span>
-            ) : null}
           </Link>
         ))}
       </div>
@@ -67,8 +142,14 @@ export default async function OverviewPage() {
       >
         <h2 style={{ margin: '0 0 8px', fontSize: 14 }}>Needs you</h2>
         <p className="muted" style={{ margin: 0 }}>
-          Escalations, SLA breaches, and emergencies will list here after the API stages.
-          Until then, use <Link href="/ops/pool">Pool</Link> when dispatch is connected.
+          {data && data.sla_breach > 0 ? (
+            <>
+              {data.sla_breach} request(s) past <span className="mono">promise_by</span> — check{' '}
+              <Link href="/ops/pool">Pool</Link>.
+            </>
+          ) : (
+            <>No SLA breaches. Seed a request, then open the Pool to watch it land.</>
+          )}
         </p>
       </section>
     </div>

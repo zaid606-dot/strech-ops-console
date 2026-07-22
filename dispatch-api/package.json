@@ -9,7 +9,8 @@
     "migrate": "tsx --env-file=.env src/db/migrate.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/**/*.test.ts",
-    "smoke:spine": "tsx --env-file=.env scripts/smoke-spine.ts"
+    "smoke:spine": "tsx --env-file=.env scripts/smoke-spine.ts",
+    "smoke:pool": "tsx --env-file=.env scripts/smoke-pool.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",

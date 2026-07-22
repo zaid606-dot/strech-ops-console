@@ -1,9 +1,40 @@
 'use client';
 
 import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
 
-/** Stage 1 skeleton — wired to live counts in later stages. */
+type Overview = {
+  dispatching: number;
+  booked: number;
+  confirmed: number;
+  checked_in: number;
+  sla_breach: number;
+};
+
 export function LiveStrip() {
+  const [data, setData] = useState<Overview | null>(null);
+  const [err, setErr] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ops/overview');
+      if (!res.ok) {
+        setErr(true);
+        return;
+      }
+      setErr(false);
+      setData(await res.json());
+    } catch {
+      setErr(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 8000);
+    return () => clearInterval(t);
+  }, [load]);
+
   return (
     <div
       style={{
@@ -18,18 +49,28 @@ export function LiveStrip() {
       }}
     >
       <span>
-        Pool <strong style={{ color: 'var(--warn)' }}>—</strong>
+        Pool{' '}
+        <strong style={{ color: 'var(--warn)' }}>
+          {err ? '—' : (data?.dispatching ?? '…')}
+        </strong>
       </span>
       <span>
-        Offers <strong style={{ color: 'var(--accent)' }}>—</strong>
+        Booked{' '}
+        <strong style={{ color: 'var(--accent)' }}>{err ? '—' : (data?.booked ?? '…')}</strong>
       </span>
       <span>
-        Emergencies <strong style={{ color: 'var(--danger)' }}>0</strong>
+        Confirmed{' '}
+        <strong style={{ color: 'var(--ok)' }}>{err ? '—' : (data?.confirmed ?? '…')}</strong>
       </span>
       <span>
-        Agent <span className="mono">offline</span>
+        SLA breach{' '}
+        <strong style={{ color: 'var(--danger)' }}>
+          {err ? '—' : (data?.sla_breach ?? '…')}
+        </strong>
       </span>
-      <span className="muted">SLA —</span>
+      <span>
+        Agent <span className="mono">stage 6</span>
+      </span>
       <span style={{ marginLeft: 'auto' }}>
         <Link href="/ops/pool">Open pool →</Link>
       </span>

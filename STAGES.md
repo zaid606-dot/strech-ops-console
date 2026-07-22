@@ -19,7 +19,7 @@ Do not start the next stage without **go**.
 |-------|------|---------------------------|
 | **1** | Locked desk shell | ✅ **DONE** — password login, sealed cookies, middleware lock, Overview, Vercel-ready |
 | **2** | Dispatch API spine | ✅ **DONE** — `/v1` health, schema, status engine, `job_event`, INV-2 serializer |
-| **3** | Book → Pool | Seed/create request → appears in Pool (live data) |
+| **3** | Book → Pool | ✅ **DONE** — seed/create → live Pool + Overview |
 | **4** | Offers → Booked | Scoring, offer waves, Accept/Decline, Offer radar, Board |
 | **5** | Confirm + reminders + charge | `ack_arrival`, `confirm_visit`, pending charge, reminders on desk |
 | **6** | Agent runtime | Work queue, policy toggles, tick worker, Agent panel |
@@ -48,6 +48,16 @@ Do not start the next stage without **go**.
 - [x] Member serializer omits contractor identity (INV-2)
 - [x] `npm run test` + `npm run smoke:spine` pass
 - [x] H1/H2/H3/H13 locked in brief
+
+## Stage 3 acceptance
+
+- [x] `POST /v1/requests` → `dispatching` + `job_event` + `promise_by`
+- [x] `POST /v1/ops/seed-request` for desk demo
+- [x] `GET /v1/pool` + `GET /v1/overview`
+- [x] Member create response is INV-2 masked
+- [x] Agent can read pool; cannot seed
+- [x] Console Overview + Pool live counts + Seed button
+- [x] `npm run smoke:pool` passes
 
 ## Core directives (every stage)
 
