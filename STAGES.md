@@ -17,8 +17,8 @@ Do not start the next stage without **go**.
 
 | Stage | Name | Deliverable you can check |
 |-------|------|---------------------------|
-| **1** | Locked desk shell | ✅ in progress / shipped — password login, hard route lock, Overview, Vercel-ready |
-| **2** | Dispatch API spine | `/v1` health, schema, status engine, `job_event` — API runs locally/hosted |
+| **1** | Locked desk shell | ✅ **DONE** — password login, sealed cookies, middleware lock, Overview, Vercel-ready |
+| **2** | Dispatch API spine | ✅ **DONE** — `/v1` health, schema, status engine, `job_event`, INV-2 serializer |
 | **3** | Book → Pool | Seed/create request → appears in Pool (live data) |
 | **4** | Offers → Booked | Scoring, offer waves, Accept/Decline, Offer radar, Board |
 | **5** | Confirm + reminders + charge | `ack_arrival`, `confirm_visit`, pending charge, reminders on desk |
@@ -30,12 +30,24 @@ Do not start the next stage without **go**.
 
 ## Stage 1 acceptance
 
-- [ ] Login requires **username + password** from env (not a shared “dev token” field)
-- [ ] Unauthenticated users cannot reach `/ops/*` or `/api/ops/*`
-- [ ] Failed auth does not leak whether user or password was wrong
-- [ ] Overview loads after login; nav matches watch-desk IA
-- [ ] `npm run build` succeeds (Vercel-ready)
-- [ ] `.env.example` documents Vercel env vars
+- [x] Login requires **username + password** from env (not a shared “dev token” field)
+- [x] Unauthenticated users cannot reach `/ops/*` or `/api/ops/*`
+- [x] Failed auth does not leak whether user or password was wrong
+- [x] Session cookies are **HMAC-sealed** (not forgeable JSON)
+- [x] Overview loads after login; nav matches watch-desk IA (Offers/Agent/Cases placeholders)
+- [x] `npm run build` succeeds (Vercel-ready)
+- [x] `.env.example` documents Vercel env vars
+
+## Stage 2 acceptance
+
+- [x] `dispatch-api/` runs with Postgres (`DATABASE_URL`)
+- [x] Migration `001_spine.sql` — requests, appointments, contractors, `job_events`, `dispatch_owner`
+- [x] Canonical statuses only (no `scheduled` / `paid` / `refunded`)
+- [x] `transitionStatus` always writes `job_event` (complete auto-chains to `needs_review`)
+- [x] Edge bearer + `X-Strech-Actor` JWT on `/v1`
+- [x] Member serializer omits contractor identity (INV-2)
+- [x] `npm run test` + `npm run smoke:spine` pass
+- [x] H1/H2/H3/H13 locked in brief
 
 ## Core directives (every stage)
 

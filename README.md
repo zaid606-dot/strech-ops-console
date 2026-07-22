@@ -37,3 +37,12 @@ Desk routes (`/ops/*`, `/api/ops/*`) refuse traffic without a session cookie. Au
 ## Field
 
 `/field/login` — contractor UUID + field password.
+
+## Stage 2 — dispatch API
+
+```bash
+cd dispatch-api && cp .env.example .env && npm install
+npm run migrate && npm run smoke:spine && npm run dev  # :3001
+```
+
+Point console `STRECH_DISPATCH_BASE_URL=http://localhost:3001/v1` (Stage 3+ live pool).

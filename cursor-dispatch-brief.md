@@ -574,19 +574,15 @@ Implement **WP0 → WP1 → WP2** with password login + Pool + Offer radar again
 These are the gaps. Do not paper over them in code; decide or ticket explicitly.
 
 ### H1 — Status vocabulary drift (blocking)
-Plan uses `booked` / `checked_in`. Legacy console/API smoke used `scheduled` / `assigned` / `in_progress`. **One canonical enum must win** before WP0. Every client and transition table depends on it.
+**RESOLVED (Stage 2).** Canonical enum only:  
+`dispatching | booked | confirmed | checked_in | completed | needs_review | reviewed | closed | no_show | cancelled | disputed | resolved`  
+Legacy `scheduled` / `assigned` / `in_progress` are **rejected** by the transition engine.
 
 ### H2 — When does the appointment row exist?
-Accept → `booked` locks a slot, but B1 still “proposes exact arrival.” Unclear whether:
-- (a) accept locks a **provisional** window and confirm writes final `appointments` row, or  
-- (b) accept already writes `appointments` and confirm only flips status + notifies.  
-Race rules (SLOT_CONFLICT, withdraw siblings) differ. **Decide in WP2.**
+**RESOLVED (Stage 2).** Accept/book writes `appointments` immediately (firm slot from availability). `confirm_visit` does **not** recreate the appointment — it requires an existing row + `ack_arrival`, then flips status and creates charge/reminders.
 
 ### H3 — INV-2 after confirmation (policy undecided)
-Domain says mask before *and per policy after* confirm. Plan hedges. Need a hard rule:
-- member never sees legal name/photo/phone, **or**
-- after `confirmed`, member sees limited identity for safety (name + photo + ETA).  
-Serializer tests cannot be written until this is fixed.
+**RESOLVED (Stage 2).** Member-facing serializers **never** expose contractor legal name, photo, phone, or email — before or after `confirmed`. Member sees masked label (`Strech Pro`) + `confirmation_code` + schedule only.
 
 ### H4 — “Confirm” means three different acts
 **RESOLVED → §13.** Acts are `ack_arrival`, `confirm_visit`, `ack_completion` (+ `submit_review`).
@@ -616,9 +612,7 @@ Serializer tests cannot be written until this is fixed.
 **RESOLVED → §14.** API + agent workers + console run side-by-side (monorepo folders); one compose/dev script. Agent tick lives in API workers; console mints only ops/contractor JWTs; system/agent JWTs minted by API workers with server secrets.
 
 ### H13 — Ops + agent double-driving
-Can ops manually book while agent is mid-wave?  
-Need lock: `dispatch_owner = agent|ops`, or cancel open offers on ops takeover.  
-Otherwise duplicate assigns / SLOT_CONFLICT storms.
+**RESOLVED (Stage 2).** `service_requests.dispatch_owner` ∈ (`agent`,`ops`). Default `agent`. Ops takeover sets `ops` and withdraws open offers. Agent actions on `dispatch_owner=ops` → 403 `OWNED_BY_OPS`.
 
 ### H14 — Follow-up / parts / multi-day work
 **RESOLVED → §13.** Child request via `parent_request_id`; direct re-offer same pro.
@@ -646,12 +640,7 @@ Without stubs that **look real in console** (offer accept, fake SMS inbound, fak
 **RESOLVED → §15.** Extend existing Strech Ops visual system (IBM Plex / graphite / pills); rebuild nav + add Overview/Offers/Agent/Cases/Money screens; do not greenfield a new aesthetic.
 
 ### Priority to close first (before coding past WP2)
-1. **H1** status enum  
-2. **H2** appointment timing  
-3. **H3** INV-2 post-confirm  
-4. **H13** ops vs agent ownership  
-
-**Resolved:** H4–H11, H14–H19 → §13. **H12** → §14 (dashboard + API co-located).
+*(Stage 2 closed H1–H3, H12, H13.)*
 
 ---
 
