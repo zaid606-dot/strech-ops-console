@@ -532,12 +532,12 @@ Use these as tickets. Each has a crisp acceptance. Prefer API-first; console fol
 - [ ] Console money + case panels  
 
 ### WP7 — Hardening
-- [ ] Idempotency keys on all writes  
-- [ ] OFFER_LOST + SLOT_CONFLICT + CONTRACTOR_UNFIT correctness  
-- [ ] PII serializer tier tests  
-- [ ] Fitness-at-accept tests  
-- [ ] Audit export of job_events  
-- [ ] Smoke: happy path + messy path + money path + emergency bypass  
+- [x] Idempotency keys on all writes  
+- [x] OFFER_LOST + SLOT_CONFLICT + CONTRACTOR_UNFIT correctness  
+- [x] PII serializer tier tests  
+- [x] Fitness-at-accept tests  
+- [x] Audit export of job_events  
+- [x] Smoke: happy path + messy path + money path + emergency bypass  
 
 ---
 

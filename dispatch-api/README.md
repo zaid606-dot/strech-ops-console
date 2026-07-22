@@ -1,6 +1,6 @@
-# Strech Dispatch API (Stage 2 spine)
+# Strech Dispatch API
 
-Source of truth for Strech contractor dispatch. Ops console talks only to `/v1`.
+Source of truth for Strech contractor dispatch (Stages 2–10). Ops console talks only to `/v1`.
 
 ## Quick start
 
@@ -10,33 +10,34 @@ cp .env.example .env
 # DATABASE_URL=postgresql://strech:strech@127.0.0.1:5432/strech_dispatch
 npm install
 npm run migrate
-npm run test
-npm run smoke:spine
+npm test
+npm run smoke:full
 npm run dev   # :3001
 ```
 
-## Endpoints (Stage 3)
+Auth: `Authorization: Bearer <EDGE_BEARER_TOKEN>` + `X-Strech-Actor: <JWT role+sub>`.  
+Writes accept optional `Idempotency-Key` (replay returns `Idempotent-Replay: true`).
 
-| Method | Path | Notes |
-|--------|------|-------|
-| GET | `/api/ready` | DB ping (no auth) |
-| GET | `/v1/health` | Edge + actor JWT |
-| GET | `/v1/meta/statuses` | Canonical status enum |
-| GET | `/v1/overview` | Ops counts |
-| GET | `/v1/pool` | `dispatching` jobs (ops/agent) |
-| POST | `/v1/requests` | Member/ops book → pool |
-| POST | `/v1/ops/seed-request` | Ops demo seed |
-| GET | `/v1/requests/:id` | Role-scoped |
-| GET | `/v1/requests/:id/member-view` | INV-2 masked |
-| GET | `/v1/requests/:id/events` | Audit timeline |
+## Smokes
 
 ```bash
-npm run smoke:pool
+npm run smoke:all    # all stage smokes
+npm run smoke:full   # happy → closed + emergency + CONTRACTOR_UNFIT + idempotency
 ```
 
-Auth: `Authorization: Bearer <EDGE_BEARER_TOKEN>` + `X-Strech-Actor: <JWT role+sub>`.
+## Notable surfaces
+
+| Area | Paths |
+|------|--------|
+| Pool / offers | `/v1/pool`, `/v1/offers`, `/offer-wave`, `/accept` |
+| Confirm | `/ack-arrival`, `/confirm-visit`, charges, reminders |
+| Agent | `/v1/agent/work`, `/tick`, `/policy` |
+| Field | `/contractors/me/jobs`, `/en-route`, `/check-in`, `/complete`, `/field/sms-inbound` |
+| Cases | `/v1/cases`, `/emergency`, messy recovery |
+| Money | `/money`, `/capture`, `/review`, `/close`, `/refund` |
+| Audit | `/v1/ops/audit/events` |
 
 ## Hosting
 
-Run as a Node service (Fly/Railway/Render) with Neon `DATABASE_URL`.  
-Ops console on Vercel points `STRECH_DISPATCH_BASE_URL` at this service’s `/v1`.
+Node service (Fly/Railway/Render) + Neon `DATABASE_URL`.  
+Vercel console points `STRECH_DISPATCH_BASE_URL` at this host’s `/v1` (secrets must match).
