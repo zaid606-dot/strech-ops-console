@@ -224,17 +224,110 @@ Rules:
 
 ---
 
-## 5. Agent fence (API allow-list sketch)
+## 5. How the agent watches and keeps the loop moving
+
+The agent is **not** a chat prompt with privileges. It is a **worker loop** that reads dispatch state, decides low-risk next actions, and calls the same `/v1` endpoints as ops — under an `role=agent` JWT that the API allow-lists. Timers are **system**; judgment calls are **agent**; hard fences escalate to **ops**.
+
+### 5.1 Split of duties
+
+| Layer | Runs | Owns |
+|-------|------|------|
+| **system workers** | cron / queue | Offer TTL expiry, reminder fire (T-24/T-2/T-30), no-show clock, review nudge — pure time triggers, no “judgment” |
+| **agent runtime** | continuous or tick (e.g. every 15–60s) + event wakeups | Watch pool/board, score, fan-out offers, propose arrival, auto-confirm when policy says so, parse SMS → API, escalate stuck jobs |
+| **ops** | human console | Exhausted pool, money, scope price, medical/legal, anything agent policy marks `escalate` |
+
+System fires the clock; agent decides what to do when the clock (or a new event) says “something needs attention.”
+
+### 5.2 Watch model — event + poll
+
+Agent stays current by:
+
+1. **Polling work queues** (API):
+   - `GET /v1/agent/work` (or filtered pool/board) → jobs needing attention, grouped by reason  
+     Examples: `needs_offer_wave`, `awaiting_arrival_proposal`, `ready_to_confirm`, `stale_confirmed`, `unparsed_inbound_message`, `pool_exhaust`, `sla_breach_soon`
+2. **Event wakeups** (preferred when available):
+   - New `job_event`, inbound SMS, offer accept/decline, timer fired → enqueue agent tick for that `service_request_id`
+3. **Per-job projection**: agent reads request + offers + appointment + recent events + open flags — never invents state the DB doesn’t have
+
+Every agent action still writes `job_event` with `actor_role=agent` so ops can see exactly what the agent did.
+
+### 5.3 Agent confirmation settings (`agent_policy`)
+
+“Running its own confirmation settings” = a **versioned policy row** (not prompt text) the agent loads each tick. Ops can view/edit in console; agent cannot widen its own fence.
+
+```text
+agent_policy (example fields)
+─────────────────────────────
+offer.strategy                 sequential | parallel_batch
+offer.batch_size               3
+offer.ttl_seconds              600
+offer.max_waves_before_ops     3
+
+confirm.auto_confirm           true | false
+confirm.require_contractor_ack true          # arrival must be acked
+confirm.max_eta_slip_minutes   30            # late ETA auto-ok under this
+confirm.reminder_cadence       [24h, 2h, 30m]
+
+field.auto_apply_sms           true          # parser → check-in/complete if unambiguous
+field.ambiguous_sms            escalate      # never guess
+
+sla.promise_by_escalate_minutes 30           # before promise_by → ops
+stuck.no_progress_minutes      45            # booked/confirmed with no movement
+
+# hard denials are NOT in this file — they live in API allow-list code
+```
+
+**Confirmation flow under policy:**
+
+1. Offer accepted → `booked`  
+2. Agent proposes exact arrival within window (or contractor sent one)  
+3. If `require_contractor_ack` and contractor hasn’t acked → wait / nudge via system reminder  
+4. If prerequisites met and `auto_confirm=true` → agent calls `POST /requests/{id}/confirm`  
+5. If `auto_confirm=false` or confidence/prereqs fail → leave on ops Board as `ready_to_confirm`  
+6. System schedules reminder rows from `reminder_cadence` (agent requests schedule; system fires)
+
+Agent does **not** invent reminder times per chat turn — it applies policy, then system owns delivery.
+
+### 5.4 Keep-moving loop (one tick)
+
+```text
+for job in agent_work_queue:
+  if medical_or_money_or_legal(job): escalate_ops; continue
+  match job.attention_reason:
+    needs_offer_wave      → score; create offers per policy
+    offer_expired         → next wave or escalate if max_waves
+    awaiting_arrival      → propose slot; nudge contractor
+    ready_to_confirm      → confirm if policy.auto_confirm else escalate
+    inbound_sms           → parse; if unambiguous apply API else escalate
+    late_under_threshold  → update ETA + notify member
+    late_over_threshold   → escalate ops
+    stuck / sla_breach    → escalate ops
+    else                  → no-op (system timers still run)
+```
+
+If the API returns **403**, agent must escalate — it never retries a denied action with a different story.
+
+### 5.5 What ops sees
+
+- **Agent activity** on the request timeline (`actor_role=agent`)  
+- **Policy panel** — current confirmation/offer/SLA settings  
+- **Escalation queue** — jobs the agent refused or could not advance  
+- Toggle `auto_confirm` off → agent still watches and prepares; humans press Confirm  
+
+---
+
+## 6. Agent fence (API allow-list sketch)
 
 **Allow (low-risk):**
 
-- Read pool, score candidates, create/cancel offers  
+- Read pool / agent work queue, score candidates, create/cancel offers  
 - Apply accept/decline from contractor channel  
-- Propose arrival time; trigger confirm when prerequisites met  
-- Schedule reminders  
-- Parse field signals into en-route / check-in / complete **when state machine allows**  
+- Propose arrival time; trigger confirm **when policy + state machine allow**  
+- Request reminder schedule (system fires)  
+- Parse field signals into en-route / check-in / complete **when unambiguous + state allows**  
 - Flag late / can’t-find / parts_hold (logging)  
 - Escalate to ops queue  
+- Read `agent_policy` (write policy = **ops only**)  
 
 **Deny (403 → human):**
 
@@ -244,16 +337,18 @@ Rules:
 - Legal / damage / injury cases  
 - Home Health Score / medical / emergency  
 - Blind-booking bypass (any member payload with real contractor identity)  
+- Widening its own allow-list or policy past ops-set bounds  
 - Anything ambiguous → deny/escalate  
 
 ---
 
-## 6. Console surfaces (thin, trackable)
+## 7. Console surfaces (thin, trackable)
 
 | Console view | Shows |
 |--------------|-------|
 | **Pool** | `dispatching` + promise_by + active wave |
 | **Offer radar** (new) | pending offers, TTLs, accepts/declines |
+| **Agent** (new) | work queue, last tick, policy (`auto_confirm`, offer TTL, SLA), escalations |
 | **Board** | columns by status |
 | **Request desk** | events timeline, flags, actions, money panel |
 | **Reminders** | upcoming T-24/T-2/T-30 |
@@ -263,7 +358,7 @@ Rules:
 
 ---
 
-## 7. Work packages (build order — trackable)
+## 8. Work packages (build order — trackable)
 
 Use these as tickets. Each has a crisp acceptance. Prefer API-first; console follows same package.
 
@@ -292,6 +387,15 @@ Use these as tickets. Each has a crisp acceptance. Prefer API-first; console fol
 - [ ] Masked member confirmation stub  
 - [ ] Reminder rows + worker (T-24/T-2/T-30)  
 - [ ] Console reminders on request desk  
+- [ ] `agent_policy` row + ops edit; agent auto-confirm path  
+
+### WP3b — Agent runtime (watch loop)
+- [ ] `GET /v1/agent/work` attention queue  
+- [ ] Agent tick worker (poll + event wakeup)  
+- [ ] Apply policy: offer waves, auto-confirm, escalate stuck/SLA  
+- [ ] All agent actions as `job_event` with `actor_role=agent`  
+- [ ] Console Agent panel (queue + policy toggles)  
+- [ ] 403 on policy self-widen / money / medical  
 
 ### WP4 — Field loop
 - [ ] en-route / check-in / complete APIs  
@@ -323,7 +427,7 @@ Use these as tickets. Each has a crisp acceptance. Prefer API-first; console fol
 
 ---
 
-## 8. Mapping your four flows → WPs
+## 9. Mapping your four flows → WPs
 
 | Product flow | Primary WPs | Happy path statuses |
 |--------------|-------------|---------------------|
@@ -334,7 +438,7 @@ Use these as tickets. Each has a crisp acceptance. Prefer API-first; console fol
 
 ---
 
-## 9. Explicit non-goals (this phase)
+## 10. Explicit non-goals (this phase)
 
 - Real Twilio/Stripe (ports + stubs only)  
 - Member consumer app / Bobo 3D UI  
@@ -345,6 +449,6 @@ Stub the ports; keep the state machine and audit trail real.
 
 ---
 
-## 10. Suggested next step
+## 11. Suggested next step
 
 Implement **WP0 → WP1 → WP2** until Offer radar can lock a job from the pool in the console. That is the first vertical slice of Flow A and unblocks everything else.
