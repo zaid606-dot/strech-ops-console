@@ -35,10 +35,14 @@ export function memberPublicRequest(row: {
 
 export function assertNoContractorLeak(payload: unknown) {
   const s = JSON.stringify(payload);
-  if (/assigned_contractor_id|contractor_id|"phone"|"email"/i.test(s)) {
-    // allow category-only noise; block common leak keys when paired
-    if (s.includes('assigned_contractor_id') || s.includes('"contractor_id"')) {
-      throw new Error('INV2_LEAK');
-    }
+  if (s.includes('assigned_contractor_id') || /"contractor_id"\s*:/.test(s)) {
+    throw new Error('INV2_LEAK');
+  }
+  // Block obvious contractor PII keys in member payloads
+  if (/"full_name"\s*:/.test(s) && /"phone"\s*:/.test(s)) {
+    throw new Error('INV2_LEAK');
+  }
+  if (/"email"\s*:\s*"[^"]+@/.test(s) && s.includes('contractor')) {
+    throw new Error('INV2_LEAK');
   }
 }

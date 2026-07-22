@@ -2,47 +2,103 @@
 
 Password-gated dispatch desk. API-first window onto `strech-dispatch-api`.
 
-**Build stages:** see [`STAGES.md`](./STAGES.md). Domain: [`AGENTS.md`](./AGENTS.md).
+**Build stages:** [`STAGES.md`](./STAGES.md) (1–10). Domain: [`AGENTS.md`](./AGENTS.md). Brief: [`cursor-dispatch-brief.md`](./cursor-dispatch-brief.md).
 
-## Stage 1 — locked shell
+## Quick start (local)
 
 ```bash
-cp .env.example .env.local
-# Set OPS_DASHBOARD_USER + OPS_DASHBOARD_PASSWORD (≥12 chars)
-npm install
-npm run dev   # http://localhost:3002/login
+# API + Postgres
+cd dispatch-api && cp .env.example .env && npm install
+npm run migrate && npm run smoke:full && npm run dev   # :3001
+
+# Console (separate terminal)
+cd .. && cp .env.example .env.local
+# Set OPS_DASHBOARD_USER, OPS_DASHBOARD_PASSWORD (≥12), OPS_OPERATOR_SUB (UUID)
+# STRECH_DISPATCH_BASE_URL=http://localhost:3001/v1
+# STRECH_EDGE_BEARER_TOKEN + STRECH_ACTOR_JWT_SECRET (match API .env)
+npm install && npm run dev   # :3002 → /login
 ```
 
-### Vercel
+### Desk loop (UI smoke)
 
-1. Import this repo → Framework Preset **Next.js**
-2. Set env (Production + Preview):
+1. Log in → Overview / Pool  
+2. Seed request → Offer radar → Accept  
+3. Request desk: Ack arrival → Confirm visit  
+4. Field (`/field/login` with contractor UUID): On my way → Check in → Complete  
+5. Desk: Submit review → Close  
+6. Cases / Agent / Money panels for messy paths  
+
+### API smokes
+
+```bash
+cd dispatch-api
+npm test
+npm run smoke:all    # spine → … → full (happy + emergency + CONTRACTOR_UNFIT + idempotency)
+npm run smoke:full   # single end-to-end closed + audit export
+```
+
+## Vercel (console) + hosted API
+
+### 1. Deploy API
+
+Host `dispatch-api/` on Fly / Railway / Render with Neon (or any Postgres):
+
+```bash
+cd dispatch-api
+# set DATABASE_URL, EDGE_BEARER_TOKEN, ACTOR_JWT_SECRET
+npm run migrate
+npm start   # PORT from host
+```
+
+Health: `GET /api/ready`, `GET /v1/health` (with edge + actor JWT).
+
+### 2. Deploy console on Vercel
+
+1. Import repo → Framework **Next.js** (root)  
+2. Env (Production + Preview):
 
 | Var | Required |
 |-----|----------|
 | `OPS_DASHBOARD_USER` | yes |
-| `OPS_DASHBOARD_PASSWORD` | yes (≥12 chars) |
-| `OPS_SESSION_SECRET` | recommended (≥12; defaults to ops password) |
+| `OPS_DASHBOARD_PASSWORD` | yes (≥12) |
+| `OPS_SESSION_SECRET` | recommended (≥12) |
 | `OPS_OPERATOR_SUB` | yes (UUID) |
-| `FIELD_DASHBOARD_PASSWORD` | optional (falls back to ops password) |
-| `STRECH_DISPATCH_BASE_URL` | Stage 2+ |
-| `STRECH_EDGE_BEARER_TOKEN` | Stage 2+ |
-| `STRECH_ACTOR_JWT_SECRET` | Stage 2+ |
+| `FIELD_DASHBOARD_PASSWORD` | optional |
+| `STRECH_DISPATCH_BASE_URL` | yes (`https://<api-host>/v1`) |
+| `STRECH_EDGE_BEARER_TOKEN` | yes (match API) |
+| `STRECH_ACTOR_JWT_SECRET` | yes (match API) |
 
-3. Deploy. Open `https://<project>.vercel.app/login`
-4. Optional: enable Vercel Deployment Protection as a second lock; app password is still required
+3. Deploy → `https://<project>.vercel.app/login`  
+4. Optional: Vercel Deployment Protection as a second lock (app password still required)
 
-Desk routes (`/ops/*`, `/api/ops/*`) refuse traffic without a session cookie. Auth failures return a generic error (no user/password distinction).
+### 3. Prod smoke checklist
+
+On the Vercel URL against the hosted API:
+
+- [ ] Login with ops user/password  
+- [ ] Seed → offers → accept → confirm  
+- [ ] Field complete → review → **closed**  
+- [ ] Member-view / progress stays INV-2 masked (no contractor identity)  
+- [ ] Emergency case sorts first on Cases; agent cannot approve scope / capture  
+- [ ] Double-submit of a write with same `Idempotency-Key` returns `Idempotent-Replay: true`  
+
+Desk routes (`/ops/*`, `/api/ops/*`) refuse traffic without a session cookie.
+
+## Stage map
+
+| Stage | Status |
+|-------|--------|
+| 1 Locked desk shell | ✅ |
+| 2 API spine | ✅ |
+| 3 Book → Pool | ✅ |
+| 4 Offers → Booked | ✅ |
+| 5 Confirm + charge/reminders | ✅ |
+| 6 Agent runtime | ✅ |
+| 7 Field loop | ✅ |
+| 8 Cases + messy paths | ✅ |
+| 9 Money + review + close | ✅ |
+| 10 Harden + prod smoke | ✅ |
 
 ## Field
 
 `/field/login` — contractor UUID + field password.
-
-## Stage 2 — dispatch API
-
-```bash
-cd dispatch-api && cp .env.example .env && npm install
-npm run migrate && npm run smoke:spine && npm run dev  # :3001
-```
-
-Point console `STRECH_DISPATCH_BASE_URL=http://localhost:3001/v1` (Stage 3+ live pool).

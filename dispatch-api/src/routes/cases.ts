@@ -2,6 +2,7 @@ import type { Hono } from 'hono';
 
 import type { Env } from '../auth/actor.js';
 import { agentSafeCase, listCases, resolveCase } from '../domain/cases.js';
+import { agentContextCase } from '../serializers/tiers.js';
 import {
   approveScopeChange,
   cancelRequest,
@@ -47,7 +48,11 @@ export function registerCaseRoutes(v1: Hono<Env>) {
       serviceRequestId: c.req.query('service_request_id') ?? undefined,
     });
     if (actor.role === 'agent') {
-      return c.json({ items: items.map((r) => agentSafeCase(r as Record<string, unknown>)) });
+      return c.json({
+        items: items.map((r) =>
+          agentContextCase(agentSafeCase(r as Record<string, unknown>) as Record<string, unknown>),
+        ),
+      });
     }
     return c.json({ items });
   });

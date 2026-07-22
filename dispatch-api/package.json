@@ -16,7 +16,9 @@
     "smoke:agent": "tsx --env-file=.env scripts/smoke-agent.ts",
     "smoke:field": "tsx --env-file=.env scripts/smoke-field.ts",
     "smoke:cases": "tsx --env-file=.env scripts/smoke-cases.ts",
-    "smoke:money": "tsx --env-file=.env scripts/smoke-money.ts"
+    "smoke:money": "tsx --env-file=.env scripts/smoke-money.ts",
+    "smoke:full": "tsx --env-file=.env scripts/smoke-full.ts",
+    "smoke:all": "npm run smoke:spine && npm run smoke:pool && npm run smoke:offers && npm run smoke:confirm && npm run smoke:agent && npm run smoke:field && npm run smoke:cases && npm run smoke:money && npm run smoke:full"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",

@@ -26,7 +26,7 @@ Do not start the next stage without **go**.
 | **7** | Field loop | ✅ **DONE** — en-route / check-in / complete, timeline + Field console |
 | **8** | Cases + messy paths | ✅ **DONE** — Cases UI, no-show/parts/scope, emergency ingress |
 | **9** | Money + review + close | ✅ **DONE** — capture stub, payout held→payable, review → close |
-| **10** | Harden + prod smoke | Idempotency, INV-2 tests, full loop on Vercel link |
+| **10** | Harden + prod smoke | ✅ **DONE** — idempotency, INV-2/PII tests, smoke:full + Vercel runbook |
 
 ## Stage 1 acceptance
 
@@ -126,6 +126,16 @@ Do not start the next stage without **go**.
 - [x] Agent 403 on money read/capture/refund
 - [x] Desk Money panel: charge + payout + capture/review/refund/close
 - [x] `npm run smoke:money` passes
+
+## Stage 10 acceptance
+
+- [x] Migration `006_idempotency.sql` + write middleware (`Idempotency-Key` → replay)
+- [x] Expanded INV-2 + PII tier unit tests
+- [x] `CONTRACTOR_UNFIT` withdraw covered in `smoke:full`
+- [x] Ops audit export `GET /v1/ops/audit/events`
+- [x] `npm run smoke:full` — happy path → closed + emergency + idempotent accept
+- [x] `npm run smoke:all` runs stage smokes
+- [x] README Vercel + hosted API + prod smoke checklist
 
 ## Core directives (every stage)
 

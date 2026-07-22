@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 
 import { type Env, requireActor } from './auth/actor.js';
+import { idempotency } from './auth/idempotency.js';
 import { createServiceRequest } from './domain/requests.js';
 import { pool } from './db/pool.js';
 import { registerAgentRoutes } from './routes/agent.js';
@@ -32,6 +33,7 @@ export function buildApp() {
 
   const v1 = new Hono<Env>();
   v1.use('*', requireActor);
+  v1.use('*', idempotency);
 
   registerOfferRoutes(v1);
   registerConfirmRoutes(v1);
@@ -45,9 +47,33 @@ export function buildApp() {
     return c.json({
       ok: true,
       service: 'strech-dispatch-api',
-      stage: 9,
+      stage: 10,
       actor_role: actor.role,
     });
+  });
+
+  /** Ops audit export of job_events (WP7). */
+  v1.get('/ops/audit/events', async (c) => {
+    const actor = c.get('actor');
+    if (actor.role !== 'ops' && actor.role !== 'system') {
+      return c.json({ error: 'forbidden' }, 403);
+    }
+    const requestId = c.req.query('service_request_id');
+    const limit = Math.min(1000, Math.max(1, Number(c.req.query('limit') ?? 200)));
+    const params: unknown[] = [];
+    let sql = `
+      SELECT je.*, sr.confirmation_code
+      FROM job_events je
+      JOIN service_requests sr ON sr.id = je.service_request_id
+      WHERE 1=1`;
+    if (requestId) {
+      params.push(requestId);
+      sql += ` AND je.service_request_id = $${params.length}`;
+    }
+    params.push(limit);
+    sql += ` ORDER BY je.created_at ASC, je.id ASC LIMIT $${params.length}`;
+    const { rows } = await pool.query(sql, params);
+    return c.json({ items: rows, count: rows.length });
   });
 
   v1.get('/meta/statuses', (c) => {

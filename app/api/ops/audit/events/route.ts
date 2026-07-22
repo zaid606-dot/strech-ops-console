@@ -7,36 +7,16 @@ import { dispatchFetch } from '@/lib/dispatch/client';
 export async function GET(request: NextRequest) {
   const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
+  const serviceRequestId =
+    request.nextUrl.searchParams.get('service_request_id') ?? undefined;
+  const limit = request.nextUrl.searchParams.get('limit') ?? undefined;
   try {
     const data = await dispatchFetch({
       role: 'ops',
       operatorSub: session.operatorSub,
       method: 'GET',
-      path: '/agent/policy',
-    });
-    return NextResponse.json(data);
-  } catch (e) {
-    return dispatchErrorResponse(e);
-  }
-}
-
-export async function PATCH(request: NextRequest) {
-  const session = await getOpsSessionFromRequest(request);
-  if (!session) return unauthorized();
-  let body: unknown = {};
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
-  }
-  try {
-    const data = await dispatchFetch({
-      role: 'ops',
-      operatorSub: session.operatorSub,
-      method: 'PATCH',
-      path: '/agent/policy',
-      idempotencyKey: crypto.randomUUID(),
-      body,
+      path: '/ops/audit/events',
+      query: { service_request_id: serviceRequestId, limit },
     });
     return NextResponse.json(data);
   } catch (e) {
