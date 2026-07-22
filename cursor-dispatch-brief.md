@@ -358,19 +358,116 @@ If the API returns **403**, agent must escalate — it never retries a denied ac
 
 ---
 
-## 7. Console surfaces (thin, trackable)
+## 14. How we build the watchable ops dashboard
 
-| Console view | Shows |
-|--------------|-------|
-| **Pool** | `dispatching` + promise_by + active wave |
-| **Offer radar** (new) | pending offers, TTLs, accepts/declines |
-| **Agent** (new) | work queue, last tick, policy (`auto_confirm`, offer TTL, SLA), escalations |
-| **Board** | columns by status |
-| **Request desk** | events timeline, flags, actions, money panel |
-| **Reminders** | upcoming T-24/T-2/T-30 |
-| **Cases** | disputed / no_show / scope_change needing ops |
-| **Field** | contractor jobs + otw/arrived/done buttons (SMS stand-in) |
-| **Contractors** | vetting, availability |
+Goal: **one password-gated interactive console** where you can see and drive the whole loop — pool → offers → confirm → field → money → close — against real `/v1` data. Not a marketing app; an operations dashboard.
+
+### 14.1 Shape of the system you log into
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│  strech-ops-console (Next.js)  ← YOU LOG IN HERE        │
+│  password → httpOnly session cookie                     │
+│  pages: Pool | Offers | Board | Agent | Cases | Money   │
+│         Request desk | Contractors | Field              │
+│  BFF /api/ops/*  /api/field/*                           │
+└──────────────────────────┬──────────────────────────────┘
+                           │ Bearer edge + X-Strech-Actor
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│  strech-dispatch-api  (/v1 + workers)                   │
+│  Postgres = source of truth                             │
+│  system timers + agent tick worker                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+**H12 decision for this phase:** build both in one runnable workspace (monorepo folders `dispatch-api/` + `ops-console/`, or API as sibling package checked into the working tree). One `docker compose up` (or two npm scripts) brings API + DB + console. The GitHub repo today is console-named; API code still lives beside it so the dashboard is never headless.
+
+### 14.2 Password auth (ops watch access)
+
+Replace opaque “paste a token” with a normal desk login:
+
+| Piece | v1 behavior |
+|-------|-------------|
+| Login UI | `/login` — **email/username + password** |
+| Verify | console server checks against `OPS_DASHBOARD_USER` + `OPS_DASHBOARD_PASSWORD` (env), or a small `ops_users` table later |
+| Session | httpOnly cookie `strech_ops_session` (12h), same as today |
+| Actor | BFF mints `role=ops` JWT from session `operatorSub` on every `/v1` call |
+| Route guard | `/ops/*` redirects to `/login` if no session |
+| Field | separate `/field/login` with contractor id + `FIELD_DASHBOARD_PASSWORD` (or per-pro PIN later) |
+| Not in v1 | SSO / Google / member passwords — out of scope |
+
+You and anyone you share the ops password with can open the dashboard and watch live state. Rotating the env password kills new logins; sessions expire.
+
+### 14.3 What “interactive watch” means on screen
+
+| Area | Interaction | Live? |
+|------|-------------|-------|
+| **Overview** | counts by status, open cases, SLA breaches, agent last tick | poll 5–10s |
+| **Pool** | list `dispatching`; open desk | poll 10–15s |
+| **Offer radar** | pending offers + TTL countdown; Accept/Decline stand-in | poll 5s |
+| **Board** | columns by status; drag not required — click into desk | poll 15s |
+| **Request desk** | timeline (`job_event`), money, cases, actions (book/confirm/recovery) | refresh on action + 10s |
+| **Agent** | work queue reasons, policy toggles (`auto_confirm_visit`, offer TTL), escalate list | poll 5s |
+| **Cases** | open emergencies first; scope/no-show/parts | poll 10s |
+| **Contractors** | create/approve/suspend/availability | on demand |
+| **Field** | check-in/complete as SMS stand-in | on demand |
+| **Demo controls** | “Seed member request”, “Run agent tick now”, “Simulate SMS” | buttons → `/v1` stubs |
+
+Optional later: SSE/`EventSource` from BFF for event stream; v1 polling is enough to *watch*.
+
+### 14.4 Build order (API + dashboard together)
+
+Each WP ships **API acceptance + console surface** in the same slice so you can always log in and see progress:
+
+| Slice | You can watch after it |
+|-------|-------------------------|
+| **WP0** | Health + login password works; empty shell dashboard |
+| **WP1** | Seed request appears in **Pool** |
+| **WP2** | **Offer radar**; accept → job moves to booked on **Board** |
+| **WP3** | Desk shows `ack_arrival` / `confirm_visit`; charge pending; reminders |
+| **WP3b** | **Agent** panel ticks; policy toggles move jobs without hand-booking |
+| **WP4** | **Field** advances check-in/complete; timeline updates |
+| **WP5** | **Cases** light up on messy paths + emergency |
+| **WP6** | **Money** panel + review → close |
+| **WP7** | Full smoke from login → closed on demo seed |
+
+### 14.5 Local / staging “watch it” path
+
+```bash
+# 1. API + Postgres
+cd dispatch-api && cp .env.example .env && npm run dev   # :3001
+
+# 2. Console
+cd ops-console && cp .env.example .env.local
+# OPS_DASHBOARD_USER=ops
+# OPS_DASHBOARD_PASSWORD=...   # shared watch password
+# STRECH_DISPATCH_BASE_URL=http://localhost:3001/v1
+# STRECH_* secrets match API
+npm run dev   # :3002
+
+# 3. Browser
+open http://localhost:3002/login
+# password → /ops overview → seed → watch agent/offers → field → close
+```
+
+### 14.6 What we will not build into this dashboard
+
+- Member consumer UI / Bobo 3D  
+- Pretty marketing chrome  
+- Real Twilio/Stripe until ports are swapped (stubs visible as “simulated” badges)  
+- Multi-tenant SSO  
+
+Still: **password in → live loop out.** That’s the phase done test, with you watching.
+
+### 14.7 Still decide before WP0 (remaining holes)
+
+- **H1** canonical status strings  
+- **H2** appointment create on accept vs confirm_visit  
+- **H3** INV-2 post-confirm identity  
+- **H13** `dispatch_owner` agent vs ops takeover  
+
+H12 (hosting) → closed above as monorepo/side-by-side API + console.
 
 ---
 
@@ -516,10 +613,7 @@ Serializer tests cannot be written until this is fixed.
 **RESOLVED → §13.** `reply_token` + allowlist parser; else ambiguous escalation.
 
 ### H12 — Agent runtime hosting
-Where does the tick process live? Inside `strech-dispatch-api` workers? Separate `strech-dispatch-agent` service?  
-Who mints `role=agent` JWTs in prod?  
-Idempotency if two ticks run on the same job.  
-**No repo for dispatch-api in this workspace** — greenfield hole for the source of truth itself.
+**RESOLVED → §14.** API + agent workers + console run side-by-side (monorepo folders); one compose/dev script. Agent tick lives in API workers; console mints only ops/contractor JWTs; system/agent JWTs minted by API workers with server secrets.
 
 ### H13 — Ops + agent double-driving
 Can ops manually book while agent is mid-wave?  
