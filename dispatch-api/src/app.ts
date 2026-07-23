@@ -7,7 +7,9 @@ import { pool } from './db/pool.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerCaseRoutes } from './routes/cases.js';
 import { registerConfirmRoutes } from './routes/confirm.js';
+import { registerDirectoryRoutes } from './routes/directory.js';
 import { registerFieldRoutes } from './routes/field.js';
+import { registerIntakeRoutes } from './routes/intake.js';
 import { registerMoneyRoutes } from './routes/money.js';
 import { registerOfferRoutes } from './routes/offers.js';
 import { memberPublicRequest } from './serializers/member.js';
@@ -41,6 +43,8 @@ export function buildApp() {
   registerFieldRoutes(v1);
   registerCaseRoutes(v1);
   registerMoneyRoutes(v1);
+  registerDirectoryRoutes(v1);
+  registerIntakeRoutes(v1);
 
   v1.get('/health', (c) => {
     const actor = c.get('actor');
@@ -147,9 +151,17 @@ export function buildApp() {
              sr.preferred_window_start, sr.preferred_window_end,
              sr.assigned_contractor_id, sr.appointment_id, sr.promise_by,
              sr.confirmed_at, sr.confirmation_code, sr.created_at, sr.updated_at,
-             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN sr.details ELSE '{}'::jsonb END AS details
+             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN sr.details ELSE '{}'::jsonb END AS details,
+             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN h.full_name ELSE NULL END AS member_name,
+             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN h.phone ELSE NULL END AS member_phone,
+             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN h.email ELSE NULL END AS member_email,
+             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN p.address_line1 ELSE NULL END AS address_line1,
+             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN p.city ELSE NULL END AS city,
+             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN p.state ELSE NULL END AS state,
+             CASE WHEN $1 = 'ops' OR $1 = 'system' THEN p.zip ELSE NULL END AS zip
       FROM service_requests sr
       JOIN properties p ON p.id = sr.property_id
+      JOIN homeowners h ON h.id = sr.homeowner_id
       WHERE sr.status = 'dispatching'`;
     if (category) {
       params.push(category);

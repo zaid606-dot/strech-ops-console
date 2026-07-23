@@ -63,14 +63,21 @@ button:disabled {
   cursor: not-allowed;
 }
 
-button.primary {
+button.primary,
+a.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #041018;
   font-weight: 600;
+  text-decoration: none;
+  border-radius: 4px;
+  display: inline-block;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--accent);
 }
 
-button.primary:hover:not(:disabled) {
+button.primary:hover:not(:disabled),
+a.primary:hover {
   background: #5aadef;
 }
 
@@ -80,7 +87,8 @@ button.danger {
 }
 
 input,
-select {
+select,
+textarea {
   background: var(--bg);
   border: 1px solid var(--border);
   color: var(--text);

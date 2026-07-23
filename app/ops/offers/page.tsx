@@ -36,8 +36,6 @@ export default function OffersPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [seeding, setSeeding] = useState(false);
-
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -59,27 +57,6 @@ export default function OffersPage() {
     const t = setInterval(() => void load(), 5000);
     return () => clearInterval(t);
   }, [load]);
-
-  async function seedContractor() {
-    setSeeding(true);
-    setMsg(null);
-    setError(null);
-    try {
-      const res = await fetch('/api/ops/seed-contractor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category_id: 'hvac', zip: '78701' }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.detail ?? body.error ?? 'Seed contractor failed');
-        return;
-      }
-      setMsg(`Seeded contractor ${body.contractor?.full_name}`);
-    } finally {
-      setSeeding(false);
-    }
-  }
 
   async function startWave(requestId: string) {
     setBusy(`wave-${requestId}`);
@@ -154,9 +131,7 @@ export default function OffersPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" disabled={seeding} onClick={() => void seedContractor()}>
-            {seeding ? 'Seeding pro…' : 'Seed contractor'}
-          </button>
+          <Link href="/ops/contractors">Contractors →</Link>
           <button type="button" onClick={() => void load()}>
             Refresh
           </button>
@@ -167,8 +142,8 @@ export default function OffersPage() {
       {msg ? <p className="ok">{msg}</p> : null}
 
       <p className="muted" style={{ margin: 0 }}>
-        Tip: <Link href="/ops/pool">Pool</Link> → open a job → use “Start offer wave” below when
-        pending offers are empty, or seed a contractor first for {`78701/hvac`}.
+        Tip: add a real pro on <Link href="/ops/contractors">Contractors</Link> (approve + slot),{' '}
+        <Link href="/ops/book">book a visit</Link>, then start an offer wave from the desk or below.
       </p>
 
       {Object.keys(byRequest).length === 0 ? (
@@ -181,7 +156,8 @@ export default function OffersPage() {
           }}
         >
           <p className="muted" style={{ margin: 0 }}>
-            No pending offers. Seed a request + contractor, then start a wave from a pool job id.
+            No pending offers. Book a visit, ensure a vetted contractor has availability for that
+            zip/category, then start a wave.
           </p>
           <WaveById onDone={() => void load()} />
         </div>

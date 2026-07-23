@@ -391,13 +391,41 @@ export default function RequestDeskPage() {
               background: 'var(--bg-elevated)',
             }}
           >
-            <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Property</h2>
+            <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Member & property</h2>
             {property ? (
-              <p style={{ margin: 0 }}>
-                {property.address_line1}
-                <br />
-                {property.city}, {property.state} {property.zip}
-              </p>
+              <dl
+                style={{
+                  margin: 0,
+                  display: 'grid',
+                  gridTemplateColumns: '100px 1fr',
+                  gap: '6px 10px',
+                }}
+              >
+                <dt className="muted">Member</dt>
+                <dd style={{ margin: 0 }}>{property.homeowner?.full_name ?? '—'}</dd>
+                <dt className="muted">Phone</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {property.homeowner?.phone ?? '—'}
+                </dd>
+                <dt className="muted">Email</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {property.homeowner?.email ?? '—'}
+                </dd>
+                <dt className="muted">Tier</dt>
+                <dd style={{ margin: 0 }}>{property.homeowner?.membership_tier ?? '—'}</dd>
+                <dt className="muted">Address</dt>
+                <dd style={{ margin: 0 }}>
+                  {property.address_line1}
+                  {property.address_line2 ? (
+                    <>
+                      <br />
+                      {property.address_line2}
+                    </>
+                  ) : null}
+                  <br />
+                  {property.city}, {property.state} {property.zip}
+                </dd>
+              </dl>
             ) : (
               <p className="muted">No property loaded</p>
             )}

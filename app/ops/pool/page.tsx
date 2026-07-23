@@ -18,8 +18,6 @@ export default function PoolPage() {
   const [items, setItems] = useState<ServiceRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
-  const [seedMsg, setSeedMsg] = useState<string | null>(null);
 
   const load = useCallback(async (opts?: { quiet?: boolean }) => {
     if (!opts?.quiet) setLoading(true);
@@ -39,28 +37,6 @@ export default function PoolPage() {
       if (!opts?.quiet) setLoading(false);
     }
   }, []);
-
-  async function seed() {
-    setSeeding(true);
-    setSeedMsg(null);
-    setError(null);
-    try {
-      const res = await fetch('/api/ops/seed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category_id: 'hvac', membership_tier: 'Comfort' }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.detail ?? body.error ?? `Seed failed (${res.status})`);
-        return;
-      }
-      setSeedMsg(`Seeded ${body.request?.confirmation_code ?? 'ok'}`);
-      await load({ quiet: true });
-    } finally {
-      setSeeding(false);
-    }
-  }
 
   useEffect(() => {
     void load();
@@ -82,25 +58,22 @@ export default function PoolPage() {
         <div>
           <h1 style={{ margin: 0, fontSize: 22 }}>Dispatch pool</h1>
           <p className="muted" style={{ margin: '4px 0 0' }}>
-            Requests in <span className="mono">dispatching</span>, unassigned. Auto-refresh 15s.
+            Real members in <span className="mono">dispatching</span>, unassigned. Auto-refresh 15s.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button
+          <Link
+            href="/ops/book"
             className="primary"
-            type="button"
-            onClick={() => void seed()}
-            disabled={loading || seeding}
+            style={{ display: 'inline-block', padding: '8px 14px' }}
           >
-            {seeding ? 'Seeding…' : 'Seed request'}
-          </button>
+            Book visit
+          </Link>
           <button type="button" onClick={() => void load()} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
       </div>
-
-      {seedMsg ? <p className="ok">{seedMsg}</p> : null}
 
       {error ? <p className="err">{error}</p> : null}
 
@@ -109,18 +82,18 @@ export default function PoolPage() {
           <thead>
             <tr>
               <th>Code</th>
+              <th>Member</th>
+              <th>Address</th>
               <th>Category</th>
-              <th>Status</th>
               <th>Preferred window</th>
               <th>Promise by</th>
-              <th>Created</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && !loading ? (
               <tr>
                 <td colSpan={6} className="muted">
-                  Pool is empty.
+                  Pool is empty. <Link href="/ops/book">Book a visit</Link> with real member info.
                 </td>
               </tr>
             ) : null}
@@ -131,17 +104,25 @@ export default function PoolPage() {
                     {r.confirmation_code ?? r.id.slice(0, 8)}
                   </Link>
                 </td>
-                <td>{r.category_id}</td>
                 <td>
-                  <span className={`pill ${r.status}`}>{r.status}</span>
+                  <div>{r.member_name ?? '—'}</div>
+                  <div className="mono muted" style={{ fontSize: 11 }}>
+                    {r.member_phone || r.member_email || ''}
+                  </div>
                 </td>
+                <td>
+                  <div>{r.address_line1 ?? '—'}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {[r.city, r.state, r.zip].filter(Boolean).join(', ')}
+                  </div>
+                </td>
+                <td>{r.category_id}</td>
                 <td className="mono muted">
                   {fmt(r.preferred_window_start)}
                   <br />
                   {fmt(r.preferred_window_end)}
                 </td>
                 <td className="mono muted">{fmt(r.promise_by)}</td>
-                <td className="mono muted">{fmt(r.created_at)}</td>
               </tr>
             ))}
           </tbody>

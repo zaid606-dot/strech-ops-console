@@ -7,6 +7,7 @@ import { LiveStrip } from '@/components/LiveStrip';
 
 const NAV: { href: string; label: string; exact?: boolean; soon?: boolean }[] = [
   { href: '/ops', label: 'Overview', exact: true },
+  { href: '/ops/book', label: 'Book' },
   { href: '/ops/pool', label: 'Pool' },
   { href: '/ops/board', label: 'Board' },
   { href: '/ops/offers', label: 'Offers' },

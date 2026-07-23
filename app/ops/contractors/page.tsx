@@ -10,10 +10,14 @@ export default function ContractorsPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [fullName, setFullName] = useState('MoCo Demo Pro');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [categories, setCategories] = useState('roof,hvac,plumbing');
-  const [zips, setZips] = useState('20814,20815');
+  const [phone, setPhone] = useState('');
+  const [categories, setCategories] = useState('hvac');
+  const [zips, setZips] = useState('');
+  const [slotStart, setSlotStart] = useState('');
+  const [slotEnd, setSlotEnd] = useState('');
+  const [availFor, setAvailFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -44,8 +48,9 @@ export default function ContractorsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          full_name: fullName,
-          email: email || undefined,
+          full_name: fullName.trim(),
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
           categories: categories
             .split(',')
             .map((s) => s.trim())
@@ -61,8 +66,40 @@ export default function ContractorsPage() {
         setError(body.detail ?? body.error ?? 'Create failed');
         return;
       }
-      setMsg(`Created ${body.full_name} (${body.id})`);
+      setMsg(`Created ${body.full_name} — approve + add availability before offering`);
+      setFullName('');
+      setEmail('');
+      setPhone('');
       await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addAvailability(id: string) {
+    if (!slotStart || !slotEnd) {
+      setError('Set slot start/end before adding availability');
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ops/contractors/${id}/availability`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slot_start: new Date(slotStart).toISOString(),
+          slot_end: new Date(slotEnd).toISOString(),
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.detail ?? body.error ?? 'Availability failed');
+        return;
+      }
+      setMsg(`Availability added for ${id.slice(0, 8)}`);
+      setAvailFor(null);
     } finally {
       setBusy(false);
     }
@@ -98,7 +135,8 @@ export default function ContractorsPage() {
       <div>
         <h1 style={{ margin: 0, fontSize: 22 }}>Contractors</h1>
         <p className="muted" style={{ margin: '4px 0 0' }}>
-          Create and vet pros. Only <span className="mono">approved</span> appear in available.
+          Real pros only. Create → Approve → add availability slots. Only{' '}
+          <span className="mono">approved</span> with open slots appear for offers.
         </p>
       </div>
 
@@ -123,21 +161,25 @@ export default function ContractorsPage() {
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
         </label>
         <label style={{ display: 'grid', gap: 4 }}>
+          <span className="muted">Phone</span>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1…" />
+        </label>
+        <label style={{ display: 'grid', gap: 4 }}>
           <span className="muted">Email</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="optional"
-          />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label style={{ display: 'grid', gap: 4 }}>
           <span className="muted">Categories (comma)</span>
-          <input value={categories} onChange={(e) => setCategories(e.target.value)} />
+          <input value={categories} onChange={(e) => setCategories(e.target.value)} required />
         </label>
-        <label style={{ display: 'grid', gap: 4 }}>
+        <label style={{ display: 'grid', gap: 4, gridColumn: '1 / -1' }}>
           <span className="muted">Service zips (comma)</span>
-          <input value={zips} onChange={(e) => setZips(e.target.value)} />
+          <input
+            value={zips}
+            onChange={(e) => setZips(e.target.value)}
+            placeholder="78701,78702"
+            required
+          />
         </label>
         <div style={{ gridColumn: '1 / -1' }}>
           <button className="primary" type="submit" disabled={busy}>
@@ -145,6 +187,35 @@ export default function ContractorsPage() {
           </button>
         </div>
       </form>
+
+      <div
+        style={{
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+          padding: 14,
+          background: 'var(--bg-elevated)',
+          display: 'grid',
+          gap: 10,
+          gridTemplateColumns: '1fr 1fr auto',
+          alignItems: 'end',
+        }}
+      >
+        <label style={{ display: 'grid', gap: 4 }}>
+          <span className="muted">Availability slot start</span>
+          <input
+            type="datetime-local"
+            value={slotStart}
+            onChange={(e) => setSlotStart(e.target.value)}
+          />
+        </label>
+        <label style={{ display: 'grid', gap: 4 }}>
+          <span className="muted">Slot end</span>
+          <input type="datetime-local" value={slotEnd} onChange={(e) => setSlotEnd(e.target.value)} />
+        </label>
+        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          Pick a contractor below → Add slot
+        </p>
+      </div>
 
       <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
         <table>
@@ -176,13 +247,23 @@ export default function ContractorsPage() {
                 </td>
                 <td className="mono muted">{c.categories.join(', ') || '—'}</td>
                 <td className="mono muted">{c.service_zips.join(', ') || '—'}</td>
-                <td style={{ display: 'flex', gap: 6 }}>
+                <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     disabled={busy || c.vetting_status === 'approved'}
                     onClick={() => void setVetting(c.id, 'approved')}
                   >
                     Approve
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !slotStart || !slotEnd}
+                    onClick={() => {
+                      setAvailFor(c.id);
+                      void addAvailability(c.id);
+                    }}
+                  >
+                    {availFor === c.id && busy ? 'Adding…' : 'Add slot'}
                   </button>
                   <button
                     className="danger"

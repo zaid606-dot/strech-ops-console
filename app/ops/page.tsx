@@ -14,8 +14,6 @@ type Overview = {
 export default function OverviewPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [seedMsg, setSeedMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -38,28 +36,6 @@ export default function OverviewPage() {
     const t = setInterval(() => void load(), 8000);
     return () => clearInterval(t);
   }, [load]);
-
-  async function seed() {
-    setBusy(true);
-    setSeedMsg(null);
-    setError(null);
-    try {
-      const res = await fetch('/api/ops/seed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category_id: 'hvac', membership_tier: 'Comfort' }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.detail ?? body.error ?? `Seed failed (${res.status})`);
-        return;
-      }
-      setSeedMsg(`Seeded ${body.request?.confirmation_code ?? body.request?.id}`);
-      await load();
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const tiles = [
     { label: 'Dispatching', href: '/ops/pool', value: data?.dispatching, color: 'var(--warn)' },
@@ -85,13 +61,12 @@ export default function OverviewPage() {
             Live dispatch counts from <span className="mono">/v1</span>. Auto-refresh 8s.
           </p>
         </div>
-        <button className="primary" type="button" disabled={busy} onClick={() => void seed()}>
-          {busy ? 'Seeding…' : 'Seed request'}
-        </button>
+        <Link href="/ops/book" className="primary" style={{ display: 'inline-block', padding: '8px 14px' }}>
+          Book visit
+        </Link>
       </div>
 
       {error ? <p className="err">{error}</p> : null}
-      {seedMsg ? <p className="ok">{seedMsg}</p> : null}
 
       <div
         style={{
@@ -148,7 +123,10 @@ export default function OverviewPage() {
               <Link href="/ops/pool">Pool</Link>.
             </>
           ) : (
-            <>No SLA breaches. Seed a request, then open the Pool to watch it land.</>
+            <>
+              No SLA breaches.{' '}
+              <Link href="/ops/book">Book a real visit</Link> to put a member into the pool.
+            </>
           )}
         </p>
       </section>

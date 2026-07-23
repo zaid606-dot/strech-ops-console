@@ -16,6 +16,14 @@ export type ServiceRequest = {
   dispatch_owner?: string;
   created_at: string;
   updated_at: string;
+  /** Ops pool enrichment — real member/property fields */
+  member_name?: string | null;
+  member_phone?: string | null;
+  member_email?: string | null;
+  address_line1?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
 };
 
 export type Charge = {
@@ -59,6 +67,14 @@ export type Property = {
   city: string;
   state: string;
   zip: string;
+  timezone?: string;
+  homeowner?: {
+    id: string;
+    full_name: string;
+    email: string | null;
+    phone: string | null;
+    membership_tier: string;
+  };
 };
 
 export type ContractorCandidate = {
