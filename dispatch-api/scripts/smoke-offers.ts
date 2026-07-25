@@ -202,6 +202,13 @@ async function main() {
   if (board.status !== 200) throw new Error(`board ${board.status}`);
   const boardBody = await board.json();
   if (!boardBody.counts?.booked) throw new Error('board missing booked');
+  const bookedCard = (boardBody.queues?.booked as { id: string; member_name?: string; assigned_contractor_name?: string | null }[] | undefined)?.find(
+    (r) => r.id === requestId,
+  );
+  if (!bookedCard?.member_name) throw new Error('board card missing member_name');
+  if (!bookedCard.assigned_contractor_name) {
+    throw new Error('board card missing assigned_contractor_name');
+  }
 
   const req = await app.request(`/v1/requests/${requestId}`, { headers });
   const reqBody = await req.json();

@@ -84,6 +84,18 @@ async function main() {
   if (reqBody.assigned_contractor_id !== proBody.contractor.id) {
     throw new Error('contractor mismatch');
   }
+  if (!reqBody.assigned_contractor?.full_name) {
+    throw new Error('ops enrichment missing assigned_contractor');
+  }
+  if (reqBody.assigned_contractor.id !== proBody.contractor.id) {
+    throw new Error('assigned_contractor.id mismatch');
+  }
+  if (!reqBody.appointment?.slot_start || !reqBody.appointment?.slot_end) {
+    throw new Error('ops enrichment missing appointment window');
+  }
+  if (!reqBody.homeowner?.full_name) {
+    throw new Error('ops enrichment missing homeowner');
+  }
 
   const pending = await pool.query(
     `SELECT status FROM dispatch_offers WHERE service_request_id = $1`,

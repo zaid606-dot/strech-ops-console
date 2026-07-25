@@ -32,12 +32,49 @@ function fromLocalInputValue(v: string) {
   return new Date(v).toISOString();
 }
 
+function formatDetailValue(v: unknown): string {
+  if (v == null) return '—';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+function DetailsPanel({ details }: { details: Record<string, unknown> | null | undefined }) {
+  const entries = Object.entries(details ?? {});
+  if (entries.length === 0) return <span className="muted">—</span>;
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      {entries.map(([key, value]) => (
+        <div key={key} style={{ fontSize: 13 }}>
+          <span className="muted">{key}: </span>
+          <span>{formatDetailValue(value)}</span>
+        </div>
+      ))}
+      <details style={{ marginTop: 6 }}>
+        <summary className="muted" style={{ cursor: 'pointer', fontSize: 12 }}>
+          Raw JSON
+        </summary>
+        <pre
+          className="mono"
+          style={{ margin: '6px 0 0', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        >
+          {JSON.stringify(details, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 export default function RequestDeskPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
   const [request, setRequest] = useState<ServiceRequest | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
+  const [propertyError, setPropertyError] = useState<string | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [charges, setCharges] = useState<Charge[]>([]);
   const [payout, setPayout] = useState<Payout | null>(null);
@@ -69,8 +106,8 @@ export default function RequestDeskPage() {
   const [rescheduleEnd, setRescheduleEnd] = useState('');
   const [cancelReason, setCancelReason] = useState('Ops cancelled');
 
-  const load = useCallback(async () => {
-    setError(null);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setError(null);
     try {
       const reqRes = await fetch(`/api/ops/requests/${id}`);
       const reqBody = await reqRes.json();
@@ -90,7 +127,15 @@ export default function RequestDeskPage() {
       ]);
       const propBody = await propRes.json();
       const evBody = await evRes.json();
-      if (propRes.ok) setProperty(propBody);
+      if (propRes.ok) {
+        setProperty(propBody);
+        setPropertyError(null);
+      } else {
+        setProperty(null);
+        setPropertyError(
+          propBody.detail ?? propBody.error ?? `Property load failed (${propRes.status})`,
+        );
+      }
       if (evRes.ok) setEvents(evBody.items ?? []);
       if (moneyRes.ok) {
         const moneyBody = await moneyRes.json();
@@ -145,6 +190,8 @@ export default function RequestDeskPage() {
 
   useEffect(() => {
     void load();
+    const t = setInterval(() => void load({ quiet: true }), 10000);
+    return () => clearInterval(t);
   }, [load]);
 
   useEffect(() => {
@@ -293,7 +340,7 @@ export default function RequestDeskPage() {
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div>
-        <Link href="/ops" className="muted">
+        <Link href="/ops/pool" className="muted">
           ← Pool
         </Link>
         {' · '}
@@ -350,12 +397,24 @@ export default function RequestDeskPage() {
                 {fmt(request.preferred_window_start)} → {fmt(request.preferred_window_end)}
               </dd>
               <dt className="muted">Contractor</dt>
-              <dd className="mono" style={{ margin: 0 }}>
-                {request.assigned_contractor_id ?? '—'}
+              <dd style={{ margin: 0 }}>
+                {request.assigned_contractor?.full_name ??
+                  (request.assigned_contractor_id ? (
+                    <span className="mono">{request.assigned_contractor_id}</span>
+                  ) : (
+                    '—'
+                  ))}
+                {request.assigned_contractor?.phone ? (
+                  <div className="mono muted" style={{ fontSize: 12 }}>
+                    {request.assigned_contractor.phone}
+                  </div>
+                ) : null}
               </dd>
               <dt className="muted">Appointment</dt>
               <dd className="mono" style={{ margin: 0 }}>
-                {request.appointment_id ?? '—'}
+                {request.appointment
+                  ? `${fmt(request.appointment.slot_start)} → ${fmt(request.appointment.slot_end)}`
+                  : '—'}
               </dd>
               <dt className="muted">Arrival ack</dt>
               <dd className="mono" style={{ margin: 0 }}>
@@ -366,8 +425,8 @@ export default function RequestDeskPage() {
                 {request.confirmed_at ? fmt(request.confirmed_at) : '—'}
               </dd>
               <dt className="muted">Details</dt>
-              <dd className="mono" style={{ margin: 0 }}>
-                {JSON.stringify(request.details)}
+              <dd style={{ margin: 0 }}>
+                <DetailsPanel details={request.details} />
               </dd>
             </dl>
 
@@ -419,6 +478,7 @@ export default function RequestDeskPage() {
             }}
           >
             <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Member & property</h2>
+            {propertyError ? <p className="err">{propertyError}</p> : null}
             {property ? (
               <dl
                 style={{
@@ -429,17 +489,23 @@ export default function RequestDeskPage() {
                 }}
               >
                 <dt className="muted">Member</dt>
-                <dd style={{ margin: 0 }}>{property.homeowner?.full_name ?? '—'}</dd>
+                <dd style={{ margin: 0 }}>
+                  {property.homeowner?.full_name ?? request.homeowner?.full_name ?? '—'}
+                </dd>
                 <dt className="muted">Phone</dt>
                 <dd className="mono" style={{ margin: 0 }}>
-                  {property.homeowner?.phone ?? '—'}
+                  {property.homeowner?.phone ?? request.homeowner?.phone ?? '—'}
                 </dd>
                 <dt className="muted">Email</dt>
                 <dd className="mono" style={{ margin: 0 }}>
-                  {property.homeowner?.email ?? '—'}
+                  {property.homeowner?.email ?? request.homeowner?.email ?? '—'}
                 </dd>
                 <dt className="muted">Tier</dt>
-                <dd style={{ margin: 0 }}>{property.homeowner?.membership_tier ?? '—'}</dd>
+                <dd style={{ margin: 0 }}>
+                  {property.homeowner?.membership_tier ??
+                    request.homeowner?.membership_tier ??
+                    '—'}
+                </dd>
                 <dt className="muted">Address</dt>
                 <dd style={{ margin: 0 }}>
                   {property.address_line1}
@@ -451,6 +517,32 @@ export default function RequestDeskPage() {
                   ) : null}
                   <br />
                   {property.city}, {property.state} {property.zip}
+                </dd>
+              </dl>
+            ) : request.homeowner ? (
+              <dl
+                style={{
+                  margin: 0,
+                  display: 'grid',
+                  gridTemplateColumns: '100px 1fr',
+                  gap: '6px 10px',
+                }}
+              >
+                <dt className="muted">Member</dt>
+                <dd style={{ margin: 0 }}>{request.homeowner.full_name}</dd>
+                <dt className="muted">Phone</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {request.homeowner.phone ?? '—'}
+                </dd>
+                <dt className="muted">Email</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {request.homeowner.email ?? '—'}
+                </dd>
+                <dt className="muted">Tier</dt>
+                <dd style={{ margin: 0 }}>{request.homeowner.membership_tier}</dd>
+                <dt className="muted">Address</dt>
+                <dd className="muted" style={{ margin: 0 }}>
+                  Property unavailable
                 </dd>
               </dl>
             ) : (

@@ -101,9 +101,16 @@ export function buildApp() {
       'disputed',
     ];
     const { rows } = await pool.query(
-      `SELECT * FROM service_requests
-       WHERE status = ANY ($1::service_request_status[])
-       ORDER BY updated_at DESC
+      `SELECT sr.id, sr.category_id, sr.status, sr.promise_by, sr.confirmation_code,
+              h.full_name AS member_name,
+              p.city, p.state, p.zip,
+              c.full_name AS assigned_contractor_name
+       FROM service_requests sr
+       JOIN properties p ON p.id = sr.property_id
+       JOIN homeowners h ON h.id = sr.homeowner_id
+       LEFT JOIN contractors c ON c.id = sr.assigned_contractor_id
+       WHERE sr.status = ANY ($1::service_request_status[])
+       ORDER BY sr.updated_at DESC
        LIMIT 300`,
       [statuses],
     );
@@ -370,7 +377,39 @@ export function buildApp() {
     if (actor.role !== 'ops' && actor.role !== 'system') {
       return c.json({ error: 'forbidden' }, 403);
     }
-    return c.json(rows[0]);
+
+    // Ops/system desk enrichment — contractor name, appointment window, homeowner.
+    // INV-2: never attach this shape to member serializers.
+    const enriched = await pool.query(
+      `SELECT sr.*,
+              CASE WHEN c.id IS NULL THEN NULL
+                   ELSE json_build_object(
+                     'id', c.id,
+                     'full_name', c.full_name,
+                     'phone', c.phone,
+                     'email', c.email
+                   ) END AS assigned_contractor,
+              CASE WHEN a.id IS NULL THEN NULL
+                   ELSE json_build_object(
+                     'id', a.id,
+                     'slot_start', a.slot_start,
+                     'slot_end', a.slot_end
+                   ) END AS appointment,
+              json_build_object(
+                'id', h.id,
+                'full_name', h.full_name,
+                'phone', h.phone,
+                'email', h.email,
+                'membership_tier', h.membership_tier
+              ) AS homeowner
+       FROM service_requests sr
+       LEFT JOIN contractors c ON c.id = sr.assigned_contractor_id
+       LEFT JOIN appointments a ON a.id = sr.appointment_id
+       JOIN homeowners h ON h.id = sr.homeowner_id
+       WHERE sr.id = $1`,
+      [id],
+    );
+    return c.json(enriched.rows[0] ?? rows[0]);
   });
 
   v1.get('/requests/:id/member-view', async (c) => {

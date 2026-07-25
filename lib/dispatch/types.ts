@@ -1,3 +1,24 @@
+export type AssignedContractor = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+};
+
+export type AppointmentSummary = {
+  id: string;
+  slot_start: string;
+  slot_end: string;
+};
+
+export type HomeownerSummary = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  membership_tier: string;
+};
+
 export type ServiceRequest = {
   id: string;
   homeowner_id: string;
@@ -24,6 +45,12 @@ export type ServiceRequest = {
   city?: string | null;
   state?: string | null;
   zip?: string | null;
+  /** Ops desk enrichment — GET /v1/requests/:id (ops/system only) */
+  assigned_contractor?: AssignedContractor | null;
+  appointment?: AppointmentSummary | null;
+  homeowner?: HomeownerSummary | null;
+  /** Ops board enrichment — GET /v1/board */
+  assigned_contractor_name?: string | null;
 };
 
 export type Charge = {

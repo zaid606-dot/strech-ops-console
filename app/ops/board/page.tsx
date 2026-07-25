@@ -15,15 +15,37 @@ const QUEUE_ORDER = [
   'disputed',
 ] as const;
 
+function placeLabel(r: ServiceRequest) {
+  const parts = [r.city, r.state, r.zip].filter(Boolean);
+  return parts.length ? parts.join(', ') : '—';
+}
+
+function isPastDue(promiseBy: string | null | undefined) {
+  if (!promiseBy) return false;
+  const t = new Date(promiseBy).getTime();
+  return Number.isFinite(t) && t < Date.now();
+}
+
+function fmtPromise(iso: string | null | undefined) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
 export default function BoardPage() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [queues, setQueues] = useState<Record<string, ServiceRequest[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const res = await fetch('/api/ops/board');
       const body = await res.json();
@@ -36,13 +58,13 @@ export default function BoardPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load board');
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
-    const t = setInterval(() => void load(), 20000);
+    const t = setInterval(() => void load({ quiet: true }), 20000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -110,29 +132,50 @@ export default function BoardPage() {
                     Empty
                   </li>
                 ) : null}
-                {items.map((r) => (
-                  <li key={r.id} style={{ marginBottom: 6 }}>
-                    <Link
-                      href={`/ops/requests/${r.id}`}
-                      style={{
-                        display: 'block',
-                        padding: '6px 8px',
-                        borderRadius: 4,
-                        border: '1px solid var(--border)',
-                        background: 'var(--bg)',
-                        textDecoration: 'none',
-                        color: 'var(--text)',
-                      }}
-                    >
-                      <div className="mono" style={{ fontSize: 12 }}>
-                        {r.confirmation_code ?? r.id.slice(0, 8)}
-                      </div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        {r.category_id}
-                      </div>
-                    </Link>
-                  </li>
-                ))}
+                {items.map((r) => {
+                  const pastDue = isPastDue(r.promise_by);
+                  return (
+                    <li key={r.id} style={{ marginBottom: 6 }}>
+                      <Link
+                        href={`/ops/requests/${r.id}`}
+                        style={{
+                          display: 'block',
+                          padding: '6px 8px',
+                          borderRadius: 4,
+                          border: pastDue
+                            ? '1px solid var(--danger)'
+                            : '1px solid var(--border)',
+                          background: 'var(--bg)',
+                          textDecoration: 'none',
+                          color: 'var(--text)',
+                        }}
+                      >
+                        <div className="mono" style={{ fontSize: 12 }}>
+                          {r.confirmation_code ?? r.id.slice(0, 8)}
+                        </div>
+                        <div style={{ fontSize: 13, marginTop: 2 }}>
+                          {r.member_name ?? '—'}
+                        </div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {placeLabel(r)} · {r.category_id}
+                        </div>
+                        {r.assigned_contractor_name ? (
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {r.assigned_contractor_name}
+                          </div>
+                        ) : null}
+                        <div
+                          className={pastDue ? 'err' : 'muted'}
+                          style={{ fontSize: 11, marginTop: 2 }}
+                          title={pastDue ? 'Past due' : undefined}
+                        >
+                          Promise {fmtPromise(r.promise_by)}
+                          {pastDue ? ' · past due' : ''}
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           );
