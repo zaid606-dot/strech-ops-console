@@ -21,12 +21,12 @@ npm install && npm run dev   # :3002 → /login
 
 ### Desk loop (UI smoke)
 
-1. Log in → Overview / Pool  
-2. Seed request → Offer radar → Accept  
-3. Request desk: Ack arrival → Confirm visit  
-4. Field (`/field/login` with contractor UUID): On my way → Check in → Complete  
-5. Desk: Submit review → Close  
-6. Cases / Agent / Money panels for messy paths  
+1. Log in → Book a real visit → Pool  
+2. Contractors: create → approve → add slot  
+3. Request desk: Start offer wave → Pending offers Accept (desk) — or Book directly  
+4. Desk: Ack arrival → Confirm visit  
+5. Field (`/field/login` with contractor UUID from Contractors): On my way → Check in → Complete  
+6. Desk: Submit review → Close; Cases / Agent / Money for messy paths  
 
 ### API smokes
 
