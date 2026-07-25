@@ -16,6 +16,12 @@ type JobItem = {
     confirmation_code: string | null;
     property_id: string;
   };
+  property?: {
+    address_line1: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
 };
 
 function fmt(iso: string) {
@@ -44,7 +50,7 @@ export function FieldJobDetail({ requestId }: { requestId: string }) {
       const items = (body.items ?? []) as JobItem[];
       const found = items.find((j) => j.request.id === requestId) ?? null;
       setJob(found);
-      if (!found) setError('Job not in your active list (wrong contractor or not booked).');
+      if (!found) setError('Job not in your active list (wrong contractor or finished).');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     }
@@ -54,7 +60,7 @@ export function FieldJobDetail({ requestId }: { requestId: string }) {
     void load();
   }, [load]);
 
-  async function action(kind: 'check-in' | 'complete') {
+  async function action(kind: 'en-route' | 'check-in' | 'complete') {
     setBusy(kind);
     setMsg(null);
     setError(null);
@@ -63,7 +69,11 @@ export function FieldJobDetail({ requestId }: { requestId: string }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
-          kind === 'complete' ? { summary: 'Work completed on site' } : { note: 'Arrived on site' },
+          kind === 'complete'
+            ? { summary: 'Work completed on site' }
+            : kind === 'en-route'
+              ? { note: 'en_route' }
+              : { note: 'check_in' },
         ),
       });
       const body = await res.json();
@@ -72,14 +82,24 @@ export function FieldJobDetail({ requestId }: { requestId: string }) {
         setError(`${body.detail ?? body.error ?? `${kind} failed`}${code}`);
         return;
       }
-      setMsg(kind === 'check-in' ? 'Checked in — job in progress' : 'Job completed');
+      if (kind === 'en-route') setMsg('On the way — member timeline updated');
+      else if (kind === 'check-in') setMsg('Checked in');
+      else setMsg('Job completed — sent to review');
       if (body?.status && job) {
         setJob({
           ...job,
           request: { ...job.request, status: String(body.status) },
         });
       }
-      await load();
+      if (kind !== 'complete') await load();
+      else if (body?.status === 'needs_review') {
+        // Job leaves active list after complete — keep local status
+        setJob((prev) =>
+          prev
+            ? { ...prev, request: { ...prev.request, status: 'needs_review' } }
+            : prev,
+        );
+      }
     } finally {
       setBusy(null);
     }
@@ -119,38 +139,56 @@ export function FieldJobDetail({ requestId }: { requestId: string }) {
             background: 'var(--bg-elevated)',
           }}
         >
+          {job.property ? (
+            <p style={{ margin: '0 0 8px' }}>
+              {job.property.address_line1}
+              <br />
+              <span className="muted">
+                {job.property.city}, {job.property.state} {job.property.zip}
+              </span>
+            </p>
+          ) : null}
           <div className="mono muted" style={{ fontSize: 12 }}>
             Slot {fmt(job.appointment.slot_start)} → {fmt(job.appointment.slot_end)}
           </div>
-          <div className="mono muted" style={{ fontSize: 12, marginTop: 6 }}>
-            Property {job.request.property_id.slice(0, 8)}…
-          </div>
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-            {status === 'confirmed' ? (
-              <button
-                className="primary"
-                type="button"
-                disabled={!!busy}
-                onClick={() => void action('check-in')}
-              >
-                {busy === 'check-in' ? 'Checking in…' : 'Check in'}
-              </button>
+          <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
+            {status === 'booked' ? (
+              <p className="muted" style={{ margin: 0 }}>
+                Waiting for ops/agent to confirm the visit.
+              </p>
             ) : null}
-            {status === 'in_progress' ? (
+            {status === 'confirmed' ? (
+              <>
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => void action('en-route')}
+                  style={{ minHeight: 48, fontSize: 16 }}
+                >
+                  {busy === 'en-route' ? 'Sending…' : 'On my way'}
+                </button>
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => void action('check-in')}
+                  style={{ minHeight: 48, fontSize: 16 }}
+                >
+                  {busy === 'check-in' ? 'Checking in…' : 'Check in'}
+                </button>
+              </>
+            ) : null}
+            {status === 'checked_in' ? (
               <button
                 className="primary"
                 type="button"
                 disabled={!!busy}
                 onClick={() => void action('complete')}
+                style={{ minHeight: 48, fontSize: 16 }}
               >
                 {busy === 'complete' ? 'Completing…' : 'Complete job'}
               </button>
-            ) : null}
-            {status === 'scheduled' ? (
-              <p className="muted" style={{ margin: 0 }}>
-                Waiting for ops to confirm the visit.
-              </p>
             ) : null}
           </div>
         </section>

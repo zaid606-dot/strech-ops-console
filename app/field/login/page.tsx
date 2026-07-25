@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 export default function FieldLoginPage() {
   const router = useRouter();
-  const [token, setToken] = useState('');
+  const [password, setPassword] = useState('');
   const [contractorId, setContractorId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -18,7 +18,7 @@ export default function FieldLoginPage() {
       const res = await fetch('/api/field/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, contractorId: contractorId.trim() }),
+        body: JSON.stringify({ password, contractorId: contractorId.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -62,8 +62,7 @@ export default function FieldLoginPage() {
           </div>
           <h1 style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 600 }}>Field</h1>
           <p className="muted" style={{ margin: '8px 0 0' }}>
-            Contractor login — mints <span className="mono">role=contractor</span> with your
-            contractor UUID.
+            Contractor portal — UUID + field password. Restricted access.
           </p>
         </div>
         <label style={{ display: 'grid', gap: 6 }}>
@@ -77,12 +76,14 @@ export default function FieldLoginPage() {
           />
         </label>
         <label style={{ display: 'grid', gap: 6 }}>
-          <span className="muted">FIELD_DEV_TOKEN</span>
+          <span className="muted">Password</span>
           <input
             type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             required
+            minLength={12}
           />
         </label>
         {error ? <div className="err">{error}</div> : null}

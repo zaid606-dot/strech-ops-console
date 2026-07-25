@@ -1,0 +1,40 @@
+{
+  "name": "strech-dispatch-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "start": "tsx --env-file=.env src/index.ts",
+    "migrate": "tsx --env-file=.env src/db/migrate.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "smoke:spine": "tsx --env-file=.env scripts/smoke-spine.ts",
+    "smoke:pool": "tsx --env-file=.env scripts/smoke-pool.ts",
+    "smoke:offers": "tsx --env-file=.env scripts/smoke-offers.ts",
+    "smoke:appointments": "tsx --env-file=.env scripts/smoke-appointments.ts",
+    "smoke:confirm": "tsx --env-file=.env scripts/smoke-confirm.ts",
+    "smoke:agent": "tsx --env-file=.env scripts/smoke-agent.ts",
+    "smoke:field": "tsx --env-file=.env scripts/smoke-field.ts",
+    "smoke:cases": "tsx --env-file=.env scripts/smoke-cases.ts",
+    "smoke:money": "tsx --env-file=.env scripts/smoke-money.ts",
+    "smoke:full": "tsx --env-file=.env scripts/smoke-full.ts",
+    "smoke:intake": "tsx --env-file=.env scripts/smoke-intake.ts",
+    "smoke:all": "npm run smoke:spine && npm run smoke:pool && npm run smoke:offers && npm run smoke:appointments && npm run smoke:confirm && npm run smoke:agent && npm run smoke:field && npm run smoke:cases && npm run smoke:money && npm run smoke:full && npm run smoke:intake"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.1",
+    "hono": "^4.7.5",
+    "jose": "^5.10.0",
+    "pg": "^8.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.11",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

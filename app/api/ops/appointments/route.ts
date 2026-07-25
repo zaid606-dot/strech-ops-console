@@ -5,7 +5,7 @@ import { getOpsSessionFromRequest, unauthorized } from '@/lib/auth/ops';
 import { dispatchFetch } from '@/lib/dispatch/client';
 
 export async function POST(request: NextRequest) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
 
   let body: unknown;

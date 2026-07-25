@@ -6,7 +6,7 @@ import { dispatchFetch } from '@/lib/dispatch/client';
 import type { ServiceRequest } from '@/lib/dispatch/types';
 
 export async function GET(request: NextRequest) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
 
   try {

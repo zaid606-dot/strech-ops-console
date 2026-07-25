@@ -6,7 +6,7 @@ import { dispatchFetch } from '@/lib/dispatch/client';
 import type { ServiceRequest } from '@/lib/dispatch/types';
 
 export async function GET(request: NextRequest) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
 
   try {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       role: 'ops',
       operatorSub: session.operatorSub,
       method: 'GET',
-      path: '/ops/board',
+      path: '/board',
     });
     return NextResponse.json(data);
   } catch (e) {

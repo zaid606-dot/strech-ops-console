@@ -5,9 +5,12 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import type {
+  Charge,
   ContractorCandidate,
   JobEvent,
+  Payout,
   Property,
+  ReminderJob,
   ServiceRequest,
 } from '@/lib/dispatch/types';
 
@@ -29,24 +32,83 @@ function fromLocalInputValue(v: string) {
   return new Date(v).toISOString();
 }
 
+function formatDetailValue(v: unknown): string {
+  if (v == null) return '—';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+function DetailsPanel({ details }: { details: Record<string, unknown> | null | undefined }) {
+  const entries = Object.entries(details ?? {});
+  if (entries.length === 0) return <span className="muted">—</span>;
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      {entries.map(([key, value]) => (
+        <div key={key} style={{ fontSize: 13 }}>
+          <span className="muted">{key}: </span>
+          <span>{formatDetailValue(value)}</span>
+        </div>
+      ))}
+      <details style={{ marginTop: 6 }}>
+        <summary className="muted" style={{ cursor: 'pointer', fontSize: 12 }}>
+          Raw JSON
+        </summary>
+        <pre
+          className="mono"
+          style={{ margin: '6px 0 0', fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        >
+          {JSON.stringify(details, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 export default function RequestDeskPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
   const [request, setRequest] = useState<ServiceRequest | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
+  const [propertyError, setPropertyError] = useState<string | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
+  const [charges, setCharges] = useState<Charge[]>([]);
+  const [payout, setPayout] = useState<Payout | null>(null);
+  const [refunds, setRefunds] = useState<{ id: string; amount_cents: number; status: string }[]>(
+    [],
+  );
+  const [reminders, setReminders] = useState<ReminderJob[]>([]);
+  const [progress, setProgress] = useState<
+    { key: string; label: string; done: boolean; at: string | null }[]
+  >([]);
+  const [cases, setCases] = useState<
+    {
+      id: string;
+      type: string;
+      status: string;
+      reason_code: string | null;
+      blocks_close: boolean;
+    }[]
+  >([]);
   const [candidates, setCandidates] = useState<ContractorCandidate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [smsBody, setSmsBody] = useState('');
+  const [deferredItems, setDeferredItems] = useState('capacitor');
+  const [scopeDesc, setScopeDesc] = useState('Extra work discovered');
+  const [reviewRating, setReviewRating] = useState(5);
 
   const [rescheduleStart, setRescheduleStart] = useState('');
   const [rescheduleEnd, setRescheduleEnd] = useState('');
   const [cancelReason, setCancelReason] = useState('Ops cancelled');
 
-  const load = useCallback(async () => {
-    setError(null);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setError(null);
     try {
       const reqRes = await fetch(`/api/ops/requests/${id}`);
       const reqBody = await reqRes.json();
@@ -56,16 +118,56 @@ export default function RequestDeskPage() {
       }
       setRequest(reqBody);
 
-      const [propRes, evRes] = await Promise.all([
+      const [propRes, evRes, moneyRes, remRes, progRes, casesRes] = await Promise.all([
         fetch(`/api/ops/properties/${reqBody.property_id}`),
         fetch(`/api/ops/requests/${id}/events`),
+        fetch(`/api/ops/requests/${id}/money`),
+        fetch(`/api/ops/requests/${id}/reminders`),
+        fetch(`/api/ops/requests/${id}/member-progress`),
+        fetch(`/api/ops/cases?status=all&service_request_id=${id}`),
       ]);
       const propBody = await propRes.json();
       const evBody = await evRes.json();
-      if (propRes.ok) setProperty(propBody);
+      if (propRes.ok) {
+        setProperty(propBody);
+        setPropertyError(null);
+      } else {
+        setProperty(null);
+        setPropertyError(
+          propBody.detail ?? propBody.error ?? `Property load failed (${propRes.status})`,
+        );
+      }
       if (evRes.ok) setEvents(evBody.items ?? []);
+      if (moneyRes.ok) {
+        const moneyBody = await moneyRes.json();
+        setCharges(moneyBody.charge ? [moneyBody.charge] : []);
+        setPayout(moneyBody.payout ?? null);
+        setRefunds(moneyBody.refunds ?? []);
+      } else {
+        setCharges([]);
+        setPayout(null);
+        setRefunds([]);
+      }
+      if (remRes.ok) {
+        const remBody = await remRes.json();
+        setReminders(remBody.items ?? []);
+      } else {
+        setReminders([]);
+      }
+      if (progRes.ok) {
+        const progBody = await progRes.json();
+        setProgress(progBody.steps ?? []);
+      } else {
+        setProgress([]);
+      }
+      if (casesRes.ok) {
+        const casesBody = await casesRes.json();
+        setCases(casesBody.items ?? []);
+      } else {
+        setCases([]);
+      }
 
-      const needAvail = ['dispatching', 'scheduled', 'confirmed'].includes(reqBody.status);
+      const needAvail = ['dispatching', 'booked', 'confirmed'].includes(reqBody.status);
       if (propRes.ok && needAvail) {
         const windowStart =
           reqBody.preferred_window_start ?? new Date().toISOString();
@@ -89,6 +191,8 @@ export default function RequestDeskPage() {
 
   useEffect(() => {
     void load();
+    const t = setInterval(() => void load({ quiet: true }), 10000);
+    return () => clearInterval(t);
   }, [load]);
 
   useEffect(() => {
@@ -120,6 +224,65 @@ export default function RequestDeskPage() {
       setActionMsg(`${action} ok`);
       await load();
       return true;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function postNamed(path: string, busyKey: string, body: unknown = {}) {
+    setBusy(busyKey);
+    setActionMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const code = data.code ? ` [${data.code}]` : '';
+        setError(`${data.detail ?? data.error ?? `${busyKey} failed`}${code}`);
+        return false;
+      }
+      setActionMsg(`${busyKey} ok`);
+      await load();
+      return true;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function fireReminders() {
+    await postNamed('/api/ops/fire-reminders', 'fire-reminders', {});
+  }
+
+  async function simulateSms(text: string) {
+    await postNamed('/api/ops/simulate-sms', 'simulate-sms', { body: text });
+  }
+
+  async function startOfferWave() {
+    setBusy('offer-wave');
+    setActionMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ops/requests/${id}/offer-wave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy: 'parallel_batch', batch_size: 3 }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        const code = body.code ? ` [${body.code}]` : '';
+        setError(`${body.detail ?? body.error ?? 'Offer wave failed'}${code}`);
+        return;
+      }
+      setActionMsg(
+        body.escalated
+          ? 'No candidates — escalated to ops'
+          : `Offer wave started with ${body.offers?.length ?? 0} offer(s)`,
+      );
+      await load();
     } finally {
       setBusy(null);
     }
@@ -159,21 +322,26 @@ export default function RequestDeskPage() {
 
   const status = request?.status;
   const showBook = status === 'dispatching';
-  const showConfirm = status === 'scheduled';
-  const showUnassign = status === 'assigned';
-  const showReschedule = status === 'scheduled' || status === 'confirmed';
-  const showReassign = status === 'scheduled' || status === 'confirmed';
-  const showNoShow = status === 'scheduled' || status === 'confirmed';
-  const showRedispatch = status === 'no_show' || status === 'needs_review';
+  const showAck = status === 'booked' && !request?.arrival_acked_at;
+  const showConfirmVisit = status === 'booked' && !!request?.arrival_acked_at;
+  const showUnassign = status === 'booked' && !request?.arrival_acked_at;
+  const showReschedule = status === 'booked' || status === 'confirmed';
+  const showReassign = status === 'booked' || status === 'confirmed';
+  const showNoShow = status === 'confirmed';
+  const showRedispatch = status === 'no_show';
+  const showMessyField = status === 'confirmed' || status === 'checked_in';
+  const showPartsHold = status === 'checked_in';
   const showCancel =
     status != null &&
-    !['cancelled', 'closed', 'completed', 'reviewed'].includes(status);
-  const showClose = status === 'reviewed' || status === 'completed';
+    ['dispatching', 'booked', 'confirmed', 'checked_in'].includes(status);
+  const showClose = status === 'reviewed' || status === 'resolved';
+  const showReview = status === 'needs_review';
+  const activeCharge = charges.find((c) => c.status !== 'voided') ?? null;
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div>
-        <Link href="/ops" className="muted">
+        <Link href="/ops/pool" className="muted">
           ← Pool
         </Link>
         {' · '}
@@ -230,31 +398,76 @@ export default function RequestDeskPage() {
                 {fmt(request.preferred_window_start)} → {fmt(request.preferred_window_end)}
               </dd>
               <dt className="muted">Contractor</dt>
-              <dd className="mono" style={{ margin: 0 }}>
-                {request.assigned_contractor_id ?? '—'}
+              <dd style={{ margin: 0 }}>
+                {request.assigned_contractor?.full_name ??
+                  (request.assigned_contractor_id ? (
+                    <span className="mono">{request.assigned_contractor_id}</span>
+                  ) : (
+                    '—'
+                  ))}
+                {request.assigned_contractor?.phone ? (
+                  <div className="mono muted" style={{ fontSize: 12 }}>
+                    {request.assigned_contractor.phone}
+                  </div>
+                ) : null}
               </dd>
               <dt className="muted">Appointment</dt>
               <dd className="mono" style={{ margin: 0 }}>
-                {request.appointment_id ?? '—'}
+                {request.appointment
+                  ? `${fmt(request.appointment.slot_start)} → ${fmt(request.appointment.slot_end)}`
+                  : '—'}
+              </dd>
+              <dt className="muted">Arrival ack</dt>
+              <dd className="mono" style={{ margin: 0 }}>
+                {request.arrival_acked_at ? fmt(request.arrival_acked_at) : '—'}
+              </dd>
+              <dt className="muted">Confirmed at</dt>
+              <dd className="mono" style={{ margin: 0 }}>
+                {request.confirmed_at ? fmt(request.confirmed_at) : '—'}
               </dd>
               <dt className="muted">Details</dt>
-              <dd className="mono" style={{ margin: 0 }}>
-                {JSON.stringify(request.details)}
+              <dd style={{ margin: 0 }}>
+                <DetailsPanel details={request.details} />
               </dd>
             </dl>
 
-            {showConfirm ? (
-              <div style={{ marginTop: 14 }}>
+            <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {showAck ? (
                 <button
                   className="primary"
                   type="button"
-                  disabled={busy === 'confirm'}
-                  onClick={() => void postAction('confirm')}
+                  disabled={busy === 'ack-arrival'}
+                  onClick={() =>
+                    void postNamed(
+                      `/api/ops/requests/${id}/ack-arrival`,
+                      'ack-arrival',
+                    )
+                  }
                 >
-                  {busy === 'confirm' ? 'Confirming…' : 'Confirm visit'}
+                  {busy === 'ack-arrival' ? 'Acking…' : 'Ack arrival (stand-in / test)'}
                 </button>
-              </div>
-            ) : null}
+              ) : null}
+              {showConfirmVisit ? (
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={busy === 'confirm-visit'}
+                  onClick={() =>
+                    void postNamed(
+                      `/api/ops/requests/${id}/confirm-visit`,
+                      'confirm-visit',
+                    )
+                  }
+                >
+                  {busy === 'confirm-visit' ? 'Confirming…' : 'Confirm visit'}
+                </button>
+              ) : null}
+              {status === 'booked' && !request.arrival_acked_at ? (
+                <p className="muted" style={{ margin: 0, width: '100%' }}>
+                  Confirm visit unlocks after <span className="mono">ack_arrival</span>.
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div
@@ -265,13 +478,74 @@ export default function RequestDeskPage() {
               background: 'var(--bg-elevated)',
             }}
           >
-            <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Property</h2>
+            <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Member & property</h2>
+            {propertyError ? <p className="err">{propertyError}</p> : null}
             {property ? (
-              <p style={{ margin: 0 }}>
-                {property.address_line1}
-                <br />
-                {property.city}, {property.state} {property.zip}
-              </p>
+              <dl
+                style={{
+                  margin: 0,
+                  display: 'grid',
+                  gridTemplateColumns: '100px 1fr',
+                  gap: '6px 10px',
+                }}
+              >
+                <dt className="muted">Member</dt>
+                <dd style={{ margin: 0 }}>
+                  {property.homeowner?.full_name ?? request.homeowner?.full_name ?? '—'}
+                </dd>
+                <dt className="muted">Phone</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {property.homeowner?.phone ?? request.homeowner?.phone ?? '—'}
+                </dd>
+                <dt className="muted">Email</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {property.homeowner?.email ?? request.homeowner?.email ?? '—'}
+                </dd>
+                <dt className="muted">Tier</dt>
+                <dd style={{ margin: 0 }}>
+                  {property.homeowner?.membership_tier ??
+                    request.homeowner?.membership_tier ??
+                    '—'}
+                </dd>
+                <dt className="muted">Address</dt>
+                <dd style={{ margin: 0 }}>
+                  {property.address_line1}
+                  {property.address_line2 ? (
+                    <>
+                      <br />
+                      {property.address_line2}
+                    </>
+                  ) : null}
+                  <br />
+                  {property.city}, {property.state} {property.zip}
+                </dd>
+              </dl>
+            ) : request.homeowner ? (
+              <dl
+                style={{
+                  margin: 0,
+                  display: 'grid',
+                  gridTemplateColumns: '100px 1fr',
+                  gap: '6px 10px',
+                }}
+              >
+                <dt className="muted">Member</dt>
+                <dd style={{ margin: 0 }}>{request.homeowner.full_name}</dd>
+                <dt className="muted">Phone</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {request.homeowner.phone ?? '—'}
+                </dd>
+                <dt className="muted">Email</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {request.homeowner.email ?? '—'}
+                </dd>
+                <dt className="muted">Tier</dt>
+                <dd style={{ margin: 0 }}>{request.homeowner.membership_tier}</dd>
+                <dt className="muted">Address</dt>
+                <dd className="muted" style={{ margin: 0 }}>
+                  Property unavailable
+                </dd>
+              </dl>
             ) : (
               <p className="muted">No property loaded</p>
             )}
@@ -279,74 +553,366 @@ export default function RequestDeskPage() {
         </section>
       ) : null}
 
-      {showBook ? (
+      {request ? (
         <section
           style={{
             border: '1px solid var(--border)',
             borderRadius: 6,
-            overflow: 'hidden',
+            padding: 14,
+            background: 'var(--bg-elevated)',
+          }}
+        >
+          <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Field progress</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            {progress.length === 0 ? (
+              <span className="muted">No progress yet</span>
+            ) : (
+              progress.map((s) => (
+                <span
+                  key={s.key}
+                  className={s.done ? 'ok' : 'muted'}
+                  style={{ fontSize: 13 }}
+                >
+                  {s.done ? '●' : '○'} {s.label}
+                  {s.at ? (
+                    <span className="mono muted" style={{ marginLeft: 6, fontSize: 11 }}>
+                      {fmt(s.at)}
+                    </span>
+                  ) : null}
+                </span>
+              ))
+            )}
+          </div>
+          {['confirmed', 'checked_in'].includes(request.status) && request.confirmation_code ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+              <input
+                value={smsBody}
+                onChange={(e) => setSmsBody(e.target.value)}
+                placeholder={`e.g. ARRIVED ${request.confirmation_code}`}
+                className="mono"
+              />
+              <button
+                type="button"
+                disabled={busy === 'simulate-sms' || !smsBody.trim()}
+                onClick={() => void simulateSms(smsBody.trim())}
+                title="Test stub — does not send a real SMS"
+              >
+                Simulate SMS (test)
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {request ? (
+        <section
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 16,
           }}
         >
           <div
             style={{
-              padding: '10px 14px',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: 14,
               background: 'var(--bg-elevated)',
-              borderBottom: '1px solid var(--border)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
             }}
           >
-            <h2 style={{ margin: 0, fontSize: 14 }}>Available contractors</h2>
-            <button type="button" onClick={() => void load()}>
-              Reload
-            </button>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Pro</th>
-                <th>Rating</th>
-                <th>Suggested slot</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="muted">
-                    No approved contractors for this category/zip. Approve one under
-                    Contractors.
-                  </td>
-                </tr>
+            <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Money</h2>
+            {activeCharge ? (
+              <dl
+                style={{
+                  margin: 0,
+                  display: 'grid',
+                  gridTemplateColumns: '120px 1fr',
+                  gap: '6px 10px',
+                }}
+              >
+                <dt className="muted">Charge</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  ${(activeCharge.amount_cents / 100).toFixed(2)}{' '}
+                  <span className={`pill ${activeCharge.status}`}>{activeCharge.status}</span>
+                </dd>
+                <dt className="muted">Payout</dt>
+                <dd className="mono" style={{ margin: 0 }}>
+                  {payout
+                    ? `$${(payout.amount_cents / 100).toFixed(2)} `
+                    : '— '}
+                  {payout ? (
+                    <span className={`pill ${payout.status}`}>{payout.status}</span>
+                  ) : null}
+                </dd>
+                <dt className="muted">Tier</dt>
+                <dd style={{ margin: 0 }}>{activeCharge.membership_tier}</dd>
+                <dt className="muted">Note</dt>
+                <dd className="muted" style={{ margin: 0 }}>
+                  {activeCharge.note ?? '—'}
+                </dd>
+                {refunds.length ? (
+                  <>
+                    <dt className="muted">Refunds</dt>
+                    <dd className="mono" style={{ margin: 0 }}>
+                      {refunds
+                        .map((r) => `$${(r.amount_cents / 100).toFixed(2)} ${r.status}`)
+                        .join(' · ')}
+                    </dd>
+                  </>
+                ) : null}
+              </dl>
+            ) : (
+              <p className="muted" style={{ margin: 0 }}>
+                No charge yet — created on <span className="mono">confirm_visit</span>.
+              </p>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12, alignItems: 'center' }}>
+              {activeCharge?.status === 'pending' || activeCharge?.status === 'failed' ? (
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() =>
+                    void postNamed(`/api/ops/requests/${id}/capture`, 'capture', {})
+                  }
+                  title="Simulated capture against dispatch money stub"
+                >
+                  Capture (simulated)
+                </button>
               ) : null}
-              {candidates.map((c) => (
-                <tr key={c.contractor_id}>
-                  <td>
-                    {c.full_name}
-                    <div className="mono muted">{c.contractor_id.slice(0, 8)}</div>
-                  </td>
-                  <td>{c.rating ?? '—'}</td>
-                  <td className="mono muted">
-                    {fmt(c.next_open_slot_start)}
-                    <br />
-                    {fmt(c.next_open_slot_end)}
-                  </td>
-                  <td>
-                    <button
-                      className="primary"
-                      type="button"
-                      disabled={busy === c.contractor_id}
-                      onClick={() => void book(c)}
+              {activeCharge?.status === 'captured' ? (
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => {
+                    const raw = window.prompt(
+                      'Refund amount (dollars with decimal e.g. 10.00, or integer cents e.g. 1000):',
+                      '10.00',
+                    );
+                    if (raw == null) return;
+                    const trimmed = raw.trim();
+                    if (!trimmed) return;
+                    const n = Number(trimmed);
+                    if (!Number.isFinite(n) || n <= 0) {
+                      setError('Invalid refund amount');
+                      return;
+                    }
+                    // Decimal → dollars; plain integer → cents
+                    const amountCents = Math.min(
+                      trimmed.includes('.') ? Math.round(n * 100) : Math.round(n),
+                      activeCharge.amount_cents,
+                    );
+                    if (
+                      !window.confirm(
+                        `Refund $${(amountCents / 100).toFixed(2)} on this charge?`,
+                      )
+                    ) {
+                      return;
+                    }
+                    void postNamed(`/api/ops/requests/${id}/refund`, 'refund', {
+                      amount_cents: amountCents,
+                      reason: 'ops goodwill',
+                    });
+                  }}
+                  title="Simulated refund — stub money path"
+                >
+                  Refund (simulated)
+                </button>
+              ) : null}
+              {showReview ? (
+                <>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+                    <span className="muted">Rating</span>
+                    <select
+                      value={reviewRating}
+                      onChange={(e) => setReviewRating(Number(e.target.value))}
                     >
-                      {busy === c.contractor_id ? 'Booking…' : 'Book'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() =>
+                      void postNamed(`/api/ops/requests/${id}/review`, 'review', {
+                        rating: reviewRating,
+                        comment: 'Ops stand-in review (test)',
+                      })
+                    }
+                    title="Ops stand-in for member review — test path"
+                  >
+                    Submit review (stand-in / test)
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <div
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: 14,
+              background: 'var(--bg-elevated)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 10,
+              }}
+            >
+              <h2 style={{ margin: 0, fontSize: 14 }}>Reminders</h2>
+              <button
+                type="button"
+                disabled={busy === 'fire-reminders'}
+                onClick={() => void fireReminders()}
+                title="Test stub — advances due reminder jobs"
+              >
+                {busy === 'fire-reminders' ? 'Firing…' : 'Fire due (test)'}
+              </button>
+            </div>
+            {reminders.length === 0 ? (
+              <p className="muted" style={{ margin: 0 }}>
+                None scheduled — T-24 / T-2 / T-30 after confirm.
+              </p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Kind</th>
+                    <th>Fire at</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reminders.map((r) => (
+                    <tr key={r.id}>
+                      <td className="mono">{r.kind}</td>
+                      <td className="mono muted">{fmt(r.fire_at)}</td>
+                      <td>
+                        <span className={`pill ${r.status}`}>{r.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </section>
+      ) : null}
+
+      {showBook ? (
+        <>
+          <section
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: 14,
+              background: 'var(--bg-elevated)',
+              display: 'grid',
+              gap: 10,
+            }}
+          >
+            <h2 style={{ margin: 0, fontSize: 14 }}>Dispatch next step</h2>
+            <p className="muted" style={{ margin: 0 }}>
+              Next: start an offer wave so contractors can accept and create the
+              appointment. Use desk direct-book only when you need to lock a pro
+              yourself.
+            </p>
+            <div>
+              <button
+                className="primary"
+                type="button"
+                disabled={!!busy}
+                onClick={() => void startOfferWave()}
+              >
+                {busy === 'offer-wave' ? 'Starting…' : 'Start offer wave'}
+              </button>
+            </div>
+          </section>
+
+          <section
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '10px 14px',
+                background: 'var(--bg-elevated)',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0, fontSize: 14 }}>Available contractors</h2>
+                <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
+                  Fallback: book directly from the desk (skips offer accept).
+                </p>
+              </div>
+              <button type="button" onClick={() => void load()}>
+                Reload
+              </button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Pro</th>
+                  <th>Rating</th>
+                  <th>Suggested slot</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {candidates.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      No approved contractors for this category/zip. Approve one under
+                      Contractors.
+                    </td>
+                  </tr>
+                ) : null}
+                {candidates.map((c) => (
+                  <tr key={c.contractor_id}>
+                    <td>
+                      {c.full_name}
+                      <div className="mono muted">{c.contractor_id.slice(0, 8)}</div>
+                    </td>
+                    <td>{c.rating ?? '—'}</td>
+                    <td className="mono muted">
+                      {fmt(c.next_open_slot_start)}
+                      <br />
+                      {fmt(c.next_open_slot_end)}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        disabled={!!busy}
+                        onClick={() => void book(c)}
+                      >
+                        {busy === c.contractor_id
+                          ? 'Booking…'
+                          : 'Book directly (desk)'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        </>
       ) : null}
 
       <section
@@ -373,6 +939,78 @@ export default function RequestDeskPage() {
               onClick={() => void postAction('unassign', { note: 'Ops unassign' })}
             >
               Unassign → pool
+            </button>
+          ) : null}
+
+          {showMessyField ? (
+            <>
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={() => void postAction('flag', { kind: 'late', note: 'Running late' }, 'flag')}
+              >
+                Flag late
+              </button>
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={() =>
+                  void postAction('flag', { kind: 'cant_find', note: 'Cant find place' }, 'flag')
+                }
+              >
+                Can't find
+              </button>
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={() => {
+                  if (!window.confirm('Open an emergency case on this request?')) return;
+                  void postNamed(`/api/ops/emergency`, 'emergency', {
+                    service_request_id: id,
+                    signal_type: 'ops_declared',
+                    payload: { note: 'ops desk emergency' },
+                  });
+                }}
+              >
+                Emergency
+              </button>
+            </>
+          ) : null}
+
+          {showPartsHold ? (
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() =>
+                void postAction(
+                  'parts-hold',
+                  {
+                    deferred_items: deferredItems
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  },
+                  'parts-hold',
+                )
+              }
+            >
+              Parts hold
+            </button>
+          ) : null}
+
+          {showMessyField ? (
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() =>
+                void postAction(
+                  'scope-change',
+                  { description: scopeDesc, proposed_amount_cents: 15000 },
+                  'scope-change',
+                )
+              }
+            >
+              Scope change
             </button>
           ) : null}
 
@@ -415,7 +1053,10 @@ export default function RequestDeskPage() {
               className="primary"
               type="button"
               disabled={!!busy}
-              onClick={() => void postAction('close', { note: 'Ops closed job' })}
+              onClick={() => {
+                if (!window.confirm('Close this job? This ends the request lifecycle.')) return;
+                void postAction('close', { note: 'Ops closed job' });
+              }}
             >
               Close job
             </button>
@@ -521,13 +1162,92 @@ export default function RequestDeskPage() {
               className="danger"
               type="button"
               disabled={!!busy || !cancelReason.trim()}
-              onClick={() => void postAction('cancel', { reason: cancelReason.trim() })}
+              onClick={() => {
+                if (!window.confirm('Cancel this request? This cannot be undone from the desk.')) {
+                  return;
+                }
+                void postAction('cancel', { reason: cancelReason.trim() });
+              }}
             >
               Cancel request
             </button>
           </div>
         ) : null}
+
+        {showPartsHold || showMessyField ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {showPartsHold ? (
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span className="muted">Deferred items (comma)</span>
+                <input
+                  value={deferredItems}
+                  onChange={(e) => setDeferredItems(e.target.value)}
+                />
+              </label>
+            ) : null}
+            {showMessyField ? (
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span className="muted">Scope description</span>
+                <input value={scopeDesc} onChange={(e) => setScopeDesc(e.target.value)} />
+              </label>
+            ) : null}
+          </div>
+        ) : null}
       </section>
+
+      {request ? (
+        <section
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              padding: '10px 14px',
+              background: 'var(--bg-elevated)',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+            }}
+          >
+            <h2 style={{ margin: 0, fontSize: 14 }}>Cases on this request</h2>
+            <Link href="/ops/cases" className="muted">
+              All cases →
+            </Link>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Reason</th>
+                <th>Flags</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cases.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="muted">
+                    No cases
+                  </td>
+                </tr>
+              ) : null}
+              {cases.map((c) => (
+                <tr key={c.id}>
+                  <td className="mono">{c.type}</td>
+                  <td>
+                    <span className={`pill ${c.status}`}>{c.status}</span>
+                  </td>
+                  <td className="mono muted">{c.reason_code ?? '—'}</td>
+                  <td className="muted">{c.blocks_close ? 'blocks_close' : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       <section
         style={{

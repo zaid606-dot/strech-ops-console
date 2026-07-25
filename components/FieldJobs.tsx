@@ -17,6 +17,12 @@ type JobItem = {
     category_id: string;
     confirmation_code: string | null;
   };
+  property?: {
+    address_line1?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
+  } | null;
 };
 
 function fmt(iso: string) {
@@ -68,7 +74,7 @@ export function FieldJobs() {
         <div>
           <h1 style={{ margin: 0, fontSize: 22 }}>My jobs</h1>
           <p className="muted" style={{ margin: '4px 0 0' }}>
-            Booked appointments for this contractor.
+            Booked / confirmed / on-site jobs for this contractor.
           </p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading}>
@@ -105,6 +111,16 @@ export function FieldJobs() {
             <div className="muted" style={{ marginTop: 6 }}>
               {job.request.category_id}
             </div>
+            {job.property?.address_line1 ? (
+              <div style={{ marginTop: 4, fontSize: 13 }}>
+                {job.property.address_line1}
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {[job.property.city, job.property.state, job.property.zip]
+                    .filter(Boolean)
+                    .join(', ')}
+                </div>
+              </div>
+            ) : null}
             <div className="mono muted" style={{ marginTop: 4, fontSize: 12 }}>
               {fmt(job.appointment.slot_start)} → {fmt(job.appointment.slot_end)}
             </div>

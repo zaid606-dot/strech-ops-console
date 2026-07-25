@@ -1,25 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-import { dispatchErrorResponse } from '@/lib/api/dispatchError';
-import { getOpsSessionFromRequest, unauthorized } from '@/lib/auth/ops';
-import { dispatchFetch } from '@/lib/dispatch/client';
-
-export async function GET(request: NextRequest) {
-  const session = getOpsSessionFromRequest(request);
-  if (!session) return unauthorized();
-
-  try {
-    const data = await dispatchFetch({
-      role: 'ops',
-      operatorSub: session.operatorSub,
-      method: 'GET',
-      path: '/ops/change-requests',
-      query: {
-        status: request.nextUrl.searchParams.get('status') ?? 'open',
-      },
-    });
-    return NextResponse.json(data);
-  } catch (e) {
-    return dispatchErrorResponse(e);
-  }
+/** Gone — use Cases (reschedule / cancel_request / etc.), not a parallel change-requests system. */
+export async function GET() {
+  return NextResponse.json(
+    {
+      error: 'gone',
+      detail: 'Change-requests removed. Use Cases for reschedule, cancel, and related ops work.',
+    },
+    { status: 410 },
+  );
 }

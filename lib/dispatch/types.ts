@@ -1,3 +1,24 @@
+export type AssignedContractor = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+};
+
+export type AppointmentSummary = {
+  id: string;
+  slot_start: string;
+  slot_end: string;
+};
+
+export type HomeownerSummary = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  membership_tier: string;
+};
+
 export type ServiceRequest = {
   id: string;
   homeowner_id: string;
@@ -12,8 +33,57 @@ export type ServiceRequest = {
   promise_by: string | null;
   confirmed_at: string | null;
   confirmation_code: string | null;
+  arrival_acked_at: string | null;
+  dispatch_owner?: string;
   created_at: string;
   updated_at: string;
+  /** Ops pool enrichment — real member/property fields */
+  member_name?: string | null;
+  member_phone?: string | null;
+  member_email?: string | null;
+  address_line1?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  /** Ops desk enrichment — GET /v1/requests/:id (ops/system only) */
+  assigned_contractor?: AssignedContractor | null;
+  appointment?: AppointmentSummary | null;
+  homeowner?: HomeownerSummary | null;
+  /** Ops board enrichment — GET /v1/board */
+  assigned_contractor_name?: string | null;
+};
+
+export type Charge = {
+  id: string;
+  service_request_id: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  membership_tier: string;
+  category_id: string;
+  note: string | null;
+  created_at: string;
+};
+
+export type Payout = {
+  id: string;
+  service_request_id: string;
+  contractor_id: string;
+  amount_cents: number;
+  status: string;
+  note: string | null;
+  created_at: string;
+};
+
+export type ReminderJob = {
+  id: string;
+  service_request_id: string;
+  kind: string;
+  fire_at: string;
+  timezone: string;
+  status: string;
+  fired_at: string | null;
+  created_at: string;
 };
 
 export type Property = {
@@ -24,6 +94,14 @@ export type Property = {
   city: string;
   state: string;
   zip: string;
+  timezone?: string;
+  homeowner?: {
+    id: string;
+    full_name: string;
+    email: string | null;
+    phone: string | null;
+    membership_tier: string;
+  };
 };
 
 export type ContractorCandidate = {

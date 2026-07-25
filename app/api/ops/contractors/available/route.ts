@@ -6,7 +6,7 @@ import { dispatchFetch } from '@/lib/dispatch/client';
 import type { ContractorCandidate } from '@/lib/dispatch/types';
 
 export async function GET(request: NextRequest) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
 
   const categoryId = request.nextUrl.searchParams.get('category_id') ?? undefined;
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const data = await dispatchFetch<ContractorCandidate[]>({
+    const data = await dispatchFetch<{ items: ContractorCandidate[] }>({
       role: 'ops',
       operatorSub: session.operatorSub,
       method: 'GET',
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
         window_start: windowStart,
       },
     });
-    return NextResponse.json({ items: Array.isArray(data) ? data : [] });
+    return NextResponse.json({ items: data.items ?? [] });
   } catch (e) {
     return dispatchErrorResponse(e);
   }

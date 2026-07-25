@@ -3,114 +3,178 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import type { ServiceRequest } from '@/lib/dispatch/types';
+type Overview = {
+  dispatching: number;
+  booked: number;
+  confirmed: number;
+  checked_in: number;
+  sla_breach: number;
+};
 
-function fmt(iso: string | null) {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
-
-export default function PoolPage() {
-  const [items, setItems] = useState<ServiceRequest[]>([]);
+export default function OverviewPage() {
+  const [data, setData] = useState<Overview | null>(null);
+  const [emergencyOpen, setEmergencyOpen] = useState<number | null>(null);
+  const [agentQueue, setAgentQueue] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/ops/pool');
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.detail ?? body.error ?? `Failed (${res.status})`);
-        setItems([]);
+      const [oRes, cRes, wRes] = await Promise.all([
+        fetch('/api/ops/overview'),
+        fetch('/api/ops/cases?status=open'),
+        fetch('/api/ops/agent/work'),
+      ]);
+      const body = await oRes.json();
+      if (!oRes.ok) {
+        setError(body.detail ?? body.error ?? `Overview failed (${oRes.status})`);
+        setData(null);
         return;
       }
-      setItems(body.items ?? []);
+      setData(body);
+
+      if (cRes.ok) {
+        const casesBody = await cRes.json();
+        const items = (casesBody.items ?? []) as { type?: string }[];
+        setEmergencyOpen(items.filter((c) => c.type === 'emergency').length);
+      } else {
+        setEmergencyOpen(null);
+      }
+
+      if (wRes.ok) {
+        const w = await wRes.json();
+        setAgentQueue((w.items as unknown[])?.length ?? 0);
+      } else {
+        setAgentQueue(null);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load pool');
-    } finally {
-      setLoading(false);
+      setError(e instanceof Error ? e.message : 'Failed to load overview');
     }
   }, []);
 
   useEffect(() => {
     void load();
-    const t = setInterval(() => void load(), 15000);
+    const t = setInterval(() => void load(), 8000);
     return () => clearInterval(t);
   }, [load]);
 
+  const tiles = [
+    { label: 'Dispatching', href: '/ops/pool', value: data?.dispatching, color: 'var(--warn)' },
+    { label: 'Booked', href: '/ops/board', value: data?.booked, color: 'var(--accent)' },
+    { label: 'Confirmed', href: '/ops/board', value: data?.confirmed, color: 'var(--ok)' },
+    { label: 'Checked in', href: '/ops/board', value: data?.checked_in, color: 'var(--ok)' },
+    { label: 'SLA breach', href: '/ops/pool', value: data?.sla_breach, color: 'var(--danger)' },
+  ];
+
   return (
-    <div>
+    <div style={{ display: 'grid', gap: 20 }}>
       <div
         style={{
           display: 'flex',
-          alignItems: 'baseline',
           justifyContent: 'space-between',
-          marginBottom: 16,
           gap: 12,
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: 22 }}>Dispatch pool</h1>
+          <h1 style={{ margin: 0, fontSize: 22 }}>Overview</h1>
           <p className="muted" style={{ margin: '4px 0 0' }}>
-            Requests in <span className="mono">dispatching</span>, unassigned. Auto-refresh 15s.
+            Live dispatch counts from <span className="mono">/v1</span>. Auto-refresh 8s.
           </p>
         </div>
-        <button type="button" onClick={() => void load()} disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <Link href="/ops/book" className="primary" style={{ display: 'inline-block', padding: '8px 14px' }}>
+          Book visit
+        </Link>
       </div>
 
       {error ? <p className="err">{error}</p> : null}
 
-      <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-        <table>
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Category</th>
-              <th>Status</th>
-              <th>Preferred window</th>
-              <th>Promise by</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 && !loading ? (
-              <tr>
-                <td colSpan={6} className="muted">
-                  Pool is empty.
-                </td>
-              </tr>
-            ) : null}
-            {items.map((r) => (
-              <tr key={r.id}>
-                <td>
-                  <Link href={`/ops/requests/${r.id}`} className="mono">
-                    {r.confirmation_code ?? r.id.slice(0, 8)}
-                  </Link>
-                </td>
-                <td>{r.category_id}</td>
-                <td>
-                  <span className={`pill ${r.status}`}>{r.status}</span>
-                </td>
-                <td className="mono muted">
-                  {fmt(r.preferred_window_start)}
-                  <br />
-                  {fmt(r.preferred_window_end)}
-                </td>
-                <td className="mono muted">{fmt(r.promise_by)}</td>
-                <td className="mono muted">{fmt(r.created_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+          gap: 12,
+        }}
+      >
+        {tiles.map((tile) => (
+          <Link
+            key={tile.label}
+            href={tile.href}
+            style={{
+              display: 'grid',
+              gap: 6,
+              padding: 14,
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              background: 'var(--bg-elevated)',
+              textDecoration: 'none',
+              color: 'inherit',
+            }}
+          >
+            <span className="muted" style={{ fontSize: 12 }}>
+              {tile.label}
+            </span>
+            <span
+              style={{
+                fontSize: 28,
+                fontWeight: 600,
+                fontFamily: 'var(--mono)',
+                color: tile.color,
+              }}
+            >
+              {tile.value ?? '—'}
+            </span>
+          </Link>
+        ))}
       </div>
+
+      <section
+        style={{
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+          padding: 14,
+          background: 'var(--bg-elevated)',
+        }}
+      >
+        <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Needs you</h2>
+        <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
+          <li>
+            {data && data.sla_breach > 0 ? (
+              <>
+                <strong style={{ color: 'var(--danger)' }}>{data.sla_breach}</strong> SLA
+                breach(es) — <Link href="/ops/pool">Pool</Link>
+              </>
+            ) : (
+              <>No SLA breaches</>
+            )}
+          </li>
+          <li>
+            {emergencyOpen != null && emergencyOpen > 0 ? (
+              <>
+                <strong style={{ color: 'var(--danger)' }}>{emergencyOpen}</strong> open
+                emergency case(s) — <Link href="/ops/cases">Cases</Link>
+              </>
+            ) : emergencyOpen === 0 ? (
+              <>No open emergency cases</>
+            ) : (
+              <>Emergency cases unavailable</>
+            )}
+          </li>
+          <li>
+            {agentQueue != null && agentQueue > 0 ? (
+              <>
+                <strong>{agentQueue}</strong> in agent queue —{' '}
+                <Link href="/ops/agent">Agent</Link>
+              </>
+            ) : agentQueue === 0 ? (
+              <>Agent queue empty</>
+            ) : (
+              <>Agent queue unavailable</>
+            )}
+          </li>
+        </ul>
+      </section>
     </div>
   );
 }

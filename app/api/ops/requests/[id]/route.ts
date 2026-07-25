@@ -8,7 +8,7 @@ import type { ServiceRequest } from '@/lib/dispatch/types';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, ctx: Ctx) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
   const { id } = await ctx.params;
 

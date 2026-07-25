@@ -7,7 +7,7 @@ import { dispatchFetch } from '@/lib/dispatch/client';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(request: NextRequest, ctx: Ctx) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
   const { id } = await ctx.params;
 
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       role: 'ops',
       operatorSub: session.operatorSub,
       method: 'POST',
-      path: `/requests/${id}/confirm`,
+      path: `/requests/${id}/confirm-visit`,
       idempotencyKey: crypto.randomUUID(),
       body: {},
     });

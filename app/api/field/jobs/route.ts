@@ -5,7 +5,7 @@ import { fieldUnauthorized, getFieldSessionFromRequest } from '@/lib/auth/field'
 import { dispatchFetch } from '@/lib/dispatch/client';
 
 export async function GET(request: NextRequest) {
-  const session = getFieldSessionFromRequest(request);
+  const session = await getFieldSessionFromRequest(request);
   if (!session) return fieldUnauthorized();
 
   try {

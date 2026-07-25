@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Strech Ops',
-  description: 'Dispatch desk — pool, book, confirm',
+  description: 'Password-gated Strech dispatch desk',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

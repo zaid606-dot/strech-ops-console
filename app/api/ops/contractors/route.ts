@@ -6,7 +6,7 @@ import { dispatchFetch } from '@/lib/dispatch/client';
 import type { Contractor } from '@/lib/dispatch/types';
 
 export async function GET(request: NextRequest) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
 
   try {
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = getOpsSessionFromRequest(request);
+  const session = await getOpsSessionFromRequest(request);
   if (!session) return unauthorized();
 
   let body: unknown;
