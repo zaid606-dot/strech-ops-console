@@ -213,6 +213,33 @@ export default function RequestDeskPage() {
     await postNamed('/api/ops/simulate-sms', 'simulate-sms', { body: text });
   }
 
+  async function startOfferWave() {
+    setBusy('offer-wave');
+    setActionMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ops/requests/${id}/offer-wave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy: 'parallel_batch', batch_size: 3 }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        const code = body.code ? ` [${body.code}]` : '';
+        setError(`${body.detail ?? body.error ?? 'Offer wave failed'}${code}`);
+        return;
+      }
+      setActionMsg(
+        body.escalated
+          ? 'No candidates — escalated to ops'
+          : `Offer wave started with ${body.offers?.length ?? 0} offer(s)`,
+      );
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function book(c: ContractorCandidate) {
     setBusy(c.contractor_id);
     setActionMsg(null);
@@ -645,73 +672,110 @@ export default function RequestDeskPage() {
       ) : null}
 
       {showBook ? (
-        <section
-          style={{
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            overflow: 'hidden',
-          }}
-        >
-          <div
+        <>
+          <section
             style={{
-              padding: '10px 14px',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: 14,
               background: 'var(--bg-elevated)',
-              borderBottom: '1px solid var(--border)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
+              display: 'grid',
+              gap: 10,
             }}
           >
-            <h2 style={{ margin: 0, fontSize: 14 }}>Available contractors</h2>
-            <button type="button" onClick={() => void load()}>
-              Reload
-            </button>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Pro</th>
-                <th>Rating</th>
-                <th>Suggested slot</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.length === 0 ? (
+            <h2 style={{ margin: 0, fontSize: 14 }}>Dispatch next step</h2>
+            <p className="muted" style={{ margin: 0 }}>
+              Next: start an offer wave so contractors can accept and create the
+              appointment. Use desk direct-book only when you need to lock a pro
+              yourself.
+            </p>
+            <div>
+              <button
+                className="primary"
+                type="button"
+                disabled={!!busy}
+                onClick={() => void startOfferWave()}
+              >
+                {busy === 'offer-wave' ? 'Starting…' : 'Start offer wave'}
+              </button>
+            </div>
+          </section>
+
+          <section
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '10px 14px',
+                background: 'var(--bg-elevated)',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0, fontSize: 14 }}>Available contractors</h2>
+                <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
+                  Fallback: book directly from the desk (skips offer accept).
+                </p>
+              </div>
+              <button type="button" onClick={() => void load()}>
+                Reload
+              </button>
+            </div>
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={4} className="muted">
-                    No approved contractors for this category/zip. Approve one under
-                    Contractors.
-                  </td>
+                  <th>Pro</th>
+                  <th>Rating</th>
+                  <th>Suggested slot</th>
+                  <th />
                 </tr>
-              ) : null}
-              {candidates.map((c) => (
-                <tr key={c.contractor_id}>
-                  <td>
-                    {c.full_name}
-                    <div className="mono muted">{c.contractor_id.slice(0, 8)}</div>
-                  </td>
-                  <td>{c.rating ?? '—'}</td>
-                  <td className="mono muted">
-                    {fmt(c.next_open_slot_start)}
-                    <br />
-                    {fmt(c.next_open_slot_end)}
-                  </td>
-                  <td>
-                    <button
-                      className="primary"
-                      type="button"
-                      disabled={busy === c.contractor_id}
-                      onClick={() => void book(c)}
-                    >
-                      {busy === c.contractor_id ? 'Booking…' : 'Book'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {candidates.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      No approved contractors for this category/zip. Approve one under
+                      Contractors.
+                    </td>
+                  </tr>
+                ) : null}
+                {candidates.map((c) => (
+                  <tr key={c.contractor_id}>
+                    <td>
+                      {c.full_name}
+                      <div className="mono muted">{c.contractor_id.slice(0, 8)}</div>
+                    </td>
+                    <td>{c.rating ?? '—'}</td>
+                    <td className="mono muted">
+                      {fmt(c.next_open_slot_start)}
+                      <br />
+                      {fmt(c.next_open_slot_end)}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        disabled={!!busy}
+                        onClick={() => void book(c)}
+                      >
+                        {busy === c.contractor_id
+                          ? 'Booking…'
+                          : 'Book directly (desk)'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        </>
       ) : null}
 
       <section

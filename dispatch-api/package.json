@@ -12,6 +12,7 @@
     "smoke:spine": "tsx --env-file=.env scripts/smoke-spine.ts",
     "smoke:pool": "tsx --env-file=.env scripts/smoke-pool.ts",
     "smoke:offers": "tsx --env-file=.env scripts/smoke-offers.ts",
+    "smoke:appointments": "tsx --env-file=.env scripts/smoke-appointments.ts",
     "smoke:confirm": "tsx --env-file=.env scripts/smoke-confirm.ts",
     "smoke:agent": "tsx --env-file=.env scripts/smoke-agent.ts",
     "smoke:field": "tsx --env-file=.env scripts/smoke-field.ts",
@@ -19,7 +20,7 @@
     "smoke:money": "tsx --env-file=.env scripts/smoke-money.ts",
     "smoke:full": "tsx --env-file=.env scripts/smoke-full.ts",
     "smoke:intake": "tsx --env-file=.env scripts/smoke-intake.ts",
-    "smoke:all": "npm run smoke:spine && npm run smoke:pool && npm run smoke:offers && npm run smoke:confirm && npm run smoke:agent && npm run smoke:field && npm run smoke:cases && npm run smoke:money && npm run smoke:full && npm run smoke:intake"
+    "smoke:all": "npm run smoke:spine && npm run smoke:pool && npm run smoke:offers && npm run smoke:appointments && npm run smoke:confirm && npm run smoke:agent && npm run smoke:field && npm run smoke:cases && npm run smoke:money && npm run smoke:full && npm run smoke:intake"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",

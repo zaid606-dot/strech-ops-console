@@ -30,6 +30,7 @@ npm run smoke:full   # happy → closed + emergency + CONTRACTOR_UNFIT + idempot
 | Area | Paths |
 |------|--------|
 | Pool / offers | `/v1/pool`, `/v1/offers`, `/offer-wave`, `/accept` |
+| Desk book | `POST /v1/appointments` (ops direct-book) |
 | Confirm | `/ack-arrival`, `/confirm-visit`, charges, reminders |
 | Agent | `/v1/agent/work`, `/tick`, `/policy` |
 | Field | `/contractors/me/jobs`, `/en-route`, `/check-in`, `/complete`, `/field/sms-inbound` |

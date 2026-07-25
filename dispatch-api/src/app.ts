@@ -5,6 +5,7 @@ import { idempotency } from './auth/idempotency.js';
 import { createServiceRequest } from './domain/requests.js';
 import { pool } from './db/pool.js';
 import { registerAgentRoutes } from './routes/agent.js';
+import { registerAppointmentRoutes } from './routes/appointments.js';
 import { registerCaseRoutes } from './routes/cases.js';
 import { registerConfirmRoutes } from './routes/confirm.js';
 import { registerDirectoryRoutes } from './routes/directory.js';
@@ -38,6 +39,7 @@ export function buildApp() {
   v1.use('*', idempotency);
 
   registerOfferRoutes(v1);
+  registerAppointmentRoutes(v1);
   registerConfirmRoutes(v1);
   registerAgentRoutes(v1);
   registerFieldRoutes(v1);

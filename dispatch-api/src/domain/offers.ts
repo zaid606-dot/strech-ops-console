@@ -9,6 +9,33 @@ function replyToken(): string {
   return randomBytes(3).toString('hex').toUpperCase();
 }
 
+/** Insert appointment; maps exclusion/unique violations to SLOT_CONFLICT. */
+async function insertExclusiveAppointment(
+  client: pg.PoolClient,
+  opts: { contractorId: string; slotStart: string | Date; slotEnd: string | Date },
+): Promise<string> {
+  await client.query('SAVEPOINT book_appt');
+  try {
+    const appt = await client.query(
+      `INSERT INTO appointments (contractor_id, slot_start, slot_end)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [opts.contractorId, opts.slotStart, opts.slotEnd],
+    );
+    await client.query('RELEASE SAVEPOINT book_appt');
+    return appt.rows[0].id as string;
+  } catch (e) {
+    await client.query('ROLLBACK TO SAVEPOINT book_appt');
+    const err = e as { code?: string };
+    if (err.code === '23P01' || err.code === '23505') {
+      throw Object.assign(new Error('slot_conflict'), {
+        code: 'SLOT_CONFLICT',
+        status: 409,
+      });
+    }
+    throw e;
+  }
+}
+
 export async function expirePendingOffers(client: pg.Pool | pg.PoolClient) {
   await client.query(
     `UPDATE dispatch_offers
@@ -297,19 +324,15 @@ export async function acceptOffer(
   }
 
   let appointmentId: string;
-  await client.query('SAVEPOINT accept_appt');
   try {
-    const appt = await client.query(
-      `INSERT INTO appointments (contractor_id, slot_start, slot_end)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [offer.contractor_id, offer.slot_start, offer.slot_end],
-    );
-    appointmentId = appt.rows[0].id;
-    await client.query('RELEASE SAVEPOINT accept_appt');
+    appointmentId = await insertExclusiveAppointment(client, {
+      contractorId: offer.contractor_id,
+      slotStart: offer.slot_start,
+      slotEnd: offer.slot_end,
+    });
   } catch (e) {
-    await client.query('ROLLBACK TO SAVEPOINT accept_appt');
     const err = e as { code?: string };
-    if (err.code === '23P01' || err.code === '23505') {
+    if (err.code === 'SLOT_CONFLICT') {
       await client.query(
         `UPDATE dispatch_offers SET status = 'withdrawn', resolved_at = now() WHERE id = $1`,
         [offer.id],
@@ -370,6 +393,94 @@ export async function acceptOffer(
     service_request_id: offer.service_request_id,
     appointment_id: appointmentId,
   };
+}
+
+/**
+ * Ops desk direct-book: lock a contractor slot without an offer accept.
+ * Same exclusivity + request transition as acceptOffer; withdraws pending offers.
+ */
+export async function directBookAppointment(
+  client: pg.PoolClient,
+  opts: {
+    serviceRequestId: string;
+    contractorId: string;
+    slotStart: string;
+    slotEnd: string;
+    actorRole: 'ops' | 'system';
+    actorId: string;
+  },
+) {
+  await expirePendingOffers(client);
+
+  const srLock = await client.query(
+    `SELECT sr.*, p.zip
+     FROM service_requests sr
+     JOIN properties p ON p.id = sr.property_id
+     WHERE sr.id = $1
+     FOR UPDATE OF sr`,
+    [opts.serviceRequestId],
+  );
+  if (!srLock.rowCount) {
+    throw Object.assign(new Error('not_found'), { code: 'NOT_FOUND', status: 404 });
+  }
+  const sr = srLock.rows[0];
+  if (sr.status !== 'dispatching') {
+    throw Object.assign(new Error('not_dispatching'), {
+      code: 'INVALID_STATUS',
+      status: 409,
+    });
+  }
+
+  const fit = await assertContractorFit(client, {
+    contractorId: opts.contractorId,
+    categoryId: sr.category_id,
+    zip: sr.zip,
+    slotEnd: new Date(opts.slotEnd),
+  });
+  if (!fit) {
+    throw Object.assign(new Error('unfit'), {
+      code: 'CONTRACTOR_UNFIT',
+      status: 409,
+    });
+  }
+
+  const appointmentId = await insertExclusiveAppointment(client, {
+    contractorId: opts.contractorId,
+    slotStart: opts.slotStart,
+    slotEnd: opts.slotEnd,
+  });
+
+  await client.query(
+    `UPDATE dispatch_offers
+     SET status = 'withdrawn', resolved_at = now()
+     WHERE service_request_id = $1 AND status = 'pending'`,
+    [opts.serviceRequestId],
+  );
+  await client.query(
+    `UPDATE dispatch_waves SET closed_at = now()
+     WHERE service_request_id = $1 AND closed_at IS NULL`,
+    [opts.serviceRequestId],
+  );
+
+  await client.query(
+    `UPDATE service_requests
+     SET assigned_contractor_id = $2,
+         appointment_id = $3,
+         updated_at = now()
+     WHERE id = $1`,
+    [opts.serviceRequestId, opts.contractorId, appointmentId],
+  );
+
+  await transitionStatus(client, {
+    serviceRequestId: opts.serviceRequestId,
+    to: 'booked',
+    actorRole: opts.actorRole,
+    actorId: opts.actorId,
+    note: 'ops direct book',
+  });
+
+  const appt = await client.query(`SELECT * FROM appointments WHERE id = $1`, [appointmentId]);
+  return appt.rows[0];
 }
 
 export async function declineOffer(
