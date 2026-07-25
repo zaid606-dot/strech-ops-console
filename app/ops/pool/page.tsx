@@ -93,7 +93,8 @@ export default function PoolPage() {
             {items.length === 0 && !loading ? (
               <tr>
                 <td colSpan={6} className="muted">
-                  Pool is empty. <Link href="/ops/book">Book a visit</Link> with real member info.
+                  No jobs waiting for a contractor.{' '}
+                  <Link href="/ops/book">Add a visit to the dispatch pool</Link>.
                 </td>
               </tr>
             ) : null}

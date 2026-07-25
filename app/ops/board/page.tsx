@@ -15,6 +15,16 @@ const QUEUE_ORDER = [
   'disputed',
 ] as const;
 
+const STATUS_LABELS: Record<(typeof QUEUE_ORDER)[number], string> = {
+  dispatching: 'Dispatching',
+  booked: 'Booked',
+  confirmed: 'Confirmed',
+  checked_in: 'Checked in',
+  needs_review: 'Needs review',
+  no_show: 'No show',
+  disputed: 'Disputed',
+};
+
 function placeLabel(r: ServiceRequest) {
   const parts = [r.city, r.state, r.zip].filter(Boolean);
   return parts.length ? parts.join(', ') : '—';
@@ -123,13 +133,13 @@ export default function BoardPage() {
                   alignItems: 'center',
                 }}
               >
-                <span className={`pill ${status}`}>{status}</span>
+                <span className={`pill ${status}`}>{STATUS_LABELS[status]}</span>
                 <span className="mono muted">{n}</span>
               </header>
               <ul style={{ listStyle: 'none', margin: 0, padding: 8, flex: 1 }}>
                 {items.length === 0 ? (
                   <li className="muted" style={{ padding: 6, fontSize: 12 }}>
-                    Empty
+                    No jobs in this queue
                   </li>
                 ) : null}
                 {items.map((r) => {

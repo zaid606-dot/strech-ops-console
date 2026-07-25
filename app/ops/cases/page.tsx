@@ -153,7 +153,9 @@ export default function CasesPage() {
             {items.length === 0 ? (
               <tr>
                 <td colSpan={6} className="muted">
-                  No cases
+                  {filter === 'open'
+                    ? 'No open cases. Emergencies and scope holds will show here.'
+                    : 'No cases match this filter.'}
                 </td>
               </tr>
             ) : null}

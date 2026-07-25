@@ -22,10 +22,9 @@ Dispatch DB: migrate through **`008`** (`contractor_applications`, capacity, met
    `DISPATCH_BASE_URL=<same host>/v1 npm run seed:ops-contractor`  
    → note printed `contractor_id`  
 4. Ops: `npm run dev` → http://localhost:3002  
-5. Login → **Contractors** → Approve if needed  
+5. Login → **Contractors** → Approve if needed, add availability  
 6. Pool → book → confirm  
 7. **Field** → login with contractor UUID + field token → check-in → complete  
-8. Optional: **Applications** → Accept + approve  
 
 Verify from dispatch-api:
 
@@ -42,7 +41,6 @@ npm run smoke:gate4
 | `POST /api/ops/contractors/[id]/vetting` | `/contractors/{id}/vetting` |
 | `GET/POST /api/ops/contractors/[id]/availability` | `/contractors/{id}/availability` |
 | `GET /api/ops/contractors/available` | `/contractors/available` |
-| `GET/POST /api/ops/applications` | `/contractors/applications` |
 | `GET /api/field/jobs` | `/contractors/me/jobs` |
 | `POST /api/field/jobs/[id]/check-in` | `/requests/{id}/check-in` |
 | `POST /api/field/jobs/[id]/complete` | `/requests/{id}/complete` |

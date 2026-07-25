@@ -161,11 +161,11 @@ export default function BookVisitPage() {
           <label style={{ display: 'grid', gap: 4 }}>
             <span className="muted">Category</span>
             <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="hvac">hvac</option>
-              <option value="landscaping">landscaping</option>
-              <option value="appliance">appliance</option>
-              <option value="plumbing">plumbing</option>
-              <option value="roof">roof</option>
+              <option value="hvac">HVAC</option>
+              <option value="landscaping">Landscaping</option>
+              <option value="appliance">Appliance</option>
+              <option value="plumbing">Plumbing</option>
+              <option value="roof">Roof</option>
             </select>
           </label>
           <div />
@@ -200,15 +200,14 @@ export default function BookVisitPage() {
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button className="primary" type="submit" disabled={busy}>
-            {busy ? 'Booking…' : 'Book into pool'}
+            {busy ? 'Booking…' : 'Add to dispatch pool'}
           </button>
           <Link href="/ops/pool" className="muted">
             Cancel
           </Link>
         </div>
         <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-          Email or phone is required. Demo “Seed request” is for tests only — use this form for real
-          tracking.
+          Email or phone is required. Creates a real member visit in the dispatch pool.
         </p>
       </form>
     </div>

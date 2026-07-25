@@ -101,6 +101,7 @@ export default function RequestDeskPage() {
   const [smsBody, setSmsBody] = useState('');
   const [deferredItems, setDeferredItems] = useState('capacitor');
   const [scopeDesc, setScopeDesc] = useState('Extra work discovered');
+  const [reviewRating, setReviewRating] = useState(5);
 
   const [rescheduleStart, setRescheduleStart] = useState('');
   const [rescheduleEnd, setRescheduleEnd] = useState('');
@@ -443,7 +444,7 @@ export default function RequestDeskPage() {
                     )
                   }
                 >
-                  {busy === 'ack-arrival' ? 'Acking…' : 'Ack arrival (ops stand-in)'}
+                  {busy === 'ack-arrival' ? 'Acking…' : 'Ack arrival (stand-in / test)'}
                 </button>
               ) : null}
               {showConfirmVisit ? (
@@ -594,8 +595,9 @@ export default function RequestDeskPage() {
                 type="button"
                 disabled={busy === 'simulate-sms' || !smsBody.trim()}
                 onClick={() => void simulateSms(smsBody.trim())}
+                title="Test stub — does not send a real SMS"
               >
-                Simulate SMS
+                Simulate SMS (test)
               </button>
             </div>
           ) : null}
@@ -664,7 +666,7 @@ export default function RequestDeskPage() {
                 No charge yet — created on <span className="mono">confirm_visit</span>.
               </p>
             )}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12, alignItems: 'center' }}>
               {activeCharge?.status === 'pending' || activeCharge?.status === 'failed' ? (
                 <button
                   type="button"
@@ -672,38 +674,80 @@ export default function RequestDeskPage() {
                   onClick={() =>
                     void postNamed(`/api/ops/requests/${id}/capture`, 'capture', {})
                   }
+                  title="Simulated capture against dispatch money stub"
                 >
-                  Capture
+                  Capture (simulated)
                 </button>
               ) : null}
               {activeCharge?.status === 'captured' ? (
                 <button
                   type="button"
                   disabled={!!busy}
-                  onClick={() =>
+                  onClick={() => {
+                    const raw = window.prompt(
+                      'Refund amount (dollars with decimal e.g. 10.00, or integer cents e.g. 1000):',
+                      '10.00',
+                    );
+                    if (raw == null) return;
+                    const trimmed = raw.trim();
+                    if (!trimmed) return;
+                    const n = Number(trimmed);
+                    if (!Number.isFinite(n) || n <= 0) {
+                      setError('Invalid refund amount');
+                      return;
+                    }
+                    // Decimal → dollars; plain integer → cents
+                    const amountCents = Math.min(
+                      trimmed.includes('.') ? Math.round(n * 100) : Math.round(n),
+                      activeCharge.amount_cents,
+                    );
+                    if (
+                      !window.confirm(
+                        `Refund $${(amountCents / 100).toFixed(2)} on this charge?`,
+                      )
+                    ) {
+                      return;
+                    }
                     void postNamed(`/api/ops/requests/${id}/refund`, 'refund', {
-                      amount_cents: Math.min(1000, activeCharge.amount_cents),
+                      amount_cents: amountCents,
                       reason: 'ops goodwill',
-                    })
-                  }
+                    });
+                  }}
+                  title="Simulated refund — stub money path"
                 >
-                  Refund $10
+                  Refund (simulated)
                 </button>
               ) : null}
               {showReview ? (
-                <button
-                  className="primary"
-                  type="button"
-                  disabled={!!busy}
-                  onClick={() =>
-                    void postNamed(`/api/ops/requests/${id}/review`, 'review', {
-                      rating: 5,
-                      comment: 'Ops stand-in review',
-                    })
-                  }
-                >
-                  Submit review
-                </button>
+                <>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+                    <span className="muted">Rating</span>
+                    <select
+                      value={reviewRating}
+                      onChange={(e) => setReviewRating(Number(e.target.value))}
+                    >
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() =>
+                      void postNamed(`/api/ops/requests/${id}/review`, 'review', {
+                        rating: reviewRating,
+                        comment: 'Ops stand-in review (test)',
+                      })
+                    }
+                    title="Ops stand-in for member review — test path"
+                  >
+                    Submit review (stand-in / test)
+                  </button>
+                </>
               ) : null}
             </div>
           </div>
@@ -729,8 +773,9 @@ export default function RequestDeskPage() {
                 type="button"
                 disabled={busy === 'fire-reminders'}
                 onClick={() => void fireReminders()}
+                title="Test stub — advances due reminder jobs"
               >
-                {busy === 'fire-reminders' ? 'Firing…' : 'Fire due'}
+                {busy === 'fire-reminders' ? 'Firing…' : 'Fire due (test)'}
               </button>
             </div>
             {reminders.length === 0 ? (
@@ -918,13 +963,14 @@ export default function RequestDeskPage() {
               <button
                 type="button"
                 disabled={!!busy}
-                onClick={() =>
+                onClick={() => {
+                  if (!window.confirm('Open an emergency case on this request?')) return;
                   void postNamed(`/api/ops/emergency`, 'emergency', {
                     service_request_id: id,
                     signal_type: 'ops_declared',
                     payload: { note: 'ops desk emergency' },
-                  })
-                }
+                  });
+                }}
               >
                 Emergency
               </button>
@@ -1007,7 +1053,10 @@ export default function RequestDeskPage() {
               className="primary"
               type="button"
               disabled={!!busy}
-              onClick={() => void postAction('close', { note: 'Ops closed job' })}
+              onClick={() => {
+                if (!window.confirm('Close this job? This ends the request lifecycle.')) return;
+                void postAction('close', { note: 'Ops closed job' });
+              }}
             >
               Close job
             </button>
@@ -1113,7 +1162,12 @@ export default function RequestDeskPage() {
               className="danger"
               type="button"
               disabled={!!busy || !cancelReason.trim()}
-              onClick={() => void postAction('cancel', { reason: cancelReason.trim() })}
+              onClick={() => {
+                if (!window.confirm('Cancel this request? This cannot be undone from the desk.')) {
+                  return;
+                }
+                void postAction('cancel', { reason: cancelReason.trim() });
+              }}
             >
               Cancel request
             </button>

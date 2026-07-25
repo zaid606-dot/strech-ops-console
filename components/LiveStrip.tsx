@@ -43,6 +43,22 @@ export function LiveStrip() {
     return () => clearInterval(t);
   }, [load]);
 
+  if (err) {
+    return (
+      <div
+        style={{
+          padding: '8px 20px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--bg)',
+          fontSize: 12,
+          color: 'var(--text-muted)',
+        }}
+      >
+        Counts unavailable
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -54,35 +70,45 @@ export function LiveStrip() {
         background: 'var(--bg)',
         fontSize: 12,
         color: 'var(--text-muted)',
+        alignItems: 'center',
       }}
     >
       <span>
-        Pool{' '}
-        <strong style={{ color: 'var(--warn)' }}>
-          {err ? '—' : (data?.dispatching ?? '…')}
+        Dispatching{' '}
+        <strong style={{ color: 'var(--warn)' }}>{data?.dispatching ?? '…'}</strong>
+      </span>
+      <span>
+        Booked <strong style={{ color: 'var(--accent)' }}>{data?.booked ?? '…'}</strong>
+      </span>
+      <span>
+        Confirmed <strong style={{ color: 'var(--ok)' }}>{data?.confirmed ?? '…'}</strong>
+      </span>
+      <Link
+        href="/ops/pool"
+        style={{
+          color: 'inherit',
+          textDecoration: 'none',
+          fontWeight: 600,
+          fontSize: 13,
+        }}
+      >
+        SLA{' '}
+        <strong style={{ color: 'var(--danger)', fontSize: 14 }}>
+          {data?.sla_breach ?? '…'}
         </strong>
-      </span>
-      <span>
-        Booked{' '}
-        <strong style={{ color: 'var(--accent)' }}>{err ? '—' : (data?.booked ?? '…')}</strong>
-      </span>
-      <span>
-        Confirmed{' '}
-        <strong style={{ color: 'var(--ok)' }}>{err ? '—' : (data?.confirmed ?? '…')}</strong>
-      </span>
-      <span>
-        SLA breach{' '}
-        <strong style={{ color: 'var(--danger)' }}>
-          {err ? '—' : (data?.sla_breach ?? '…')}
-        </strong>
-      </span>
-      <span>
-        Agent queue{' '}
-        <strong style={{ color: 'var(--text)' }}>{err ? '—' : (queue ?? '…')}</strong>
-      </span>
-      <span style={{ marginLeft: 'auto' }}>
-        <Link href="/ops/agent">Agent →</Link>
-      </span>
+      </Link>
+      <Link
+        href="/ops/agent"
+        style={{
+          color: 'inherit',
+          textDecoration: 'none',
+          fontWeight: 600,
+          fontSize: 13,
+        }}
+      >
+        Agent{' '}
+        <strong style={{ color: 'var(--text)', fontSize: 14 }}>{queue ?? '…'}</strong>
+      </Link>
     </div>
   );
 }

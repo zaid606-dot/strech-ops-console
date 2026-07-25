@@ -125,9 +125,9 @@ export default function OffersPage() {
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: 22 }}>Offer radar</h1>
+          <h1 style={{ margin: 0, fontSize: 22 }}>Pending offers</h1>
           <p className="muted" style={{ margin: '4px 0 0' }}>
-            Pending offers with TTL. Accept/Decline stand-in for SMS. Refresh 5s.
+            Live offer waves with TTL. Desk Accept/Decline stands in for contractor SMS. Refresh 5s.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -141,11 +141,6 @@ export default function OffersPage() {
       {error ? <p className="err">{error}</p> : null}
       {msg ? <p className="ok">{msg}</p> : null}
 
-      <p className="muted" style={{ margin: 0 }}>
-        Tip: add a real pro on <Link href="/ops/contractors">Contractors</Link> (approve + slot),{' '}
-        <Link href="/ops/book">book a visit</Link>, then start an offer wave from the desk or below.
-      </p>
-
       {Object.keys(byRequest).length === 0 ? (
         <div
           style={{
@@ -156,8 +151,8 @@ export default function OffersPage() {
           }}
         >
           <p className="muted" style={{ margin: 0 }}>
-            No pending offers. Book a visit, ensure a vetted contractor has availability for that
-            zip/category, then start a wave.
+            No pending offers. Start a wave from a request in the pool when vetted contractors have
+            open slots.
           </p>
           <WaveById onDone={() => void load()} />
         </div>
@@ -254,14 +249,14 @@ export default function OffersPage() {
                         disabled={!!busy}
                         onClick={() => void act(o, 'accept')}
                       >
-                        Accept
+                        Accept (desk)
                       </button>{' '}
                       <button
                         type="button"
                         disabled={!!busy}
                         onClick={() => void act(o, 'decline')}
                       >
-                        Decline
+                        Decline (desk)
                       </button>
                     </td>
                   </tr>
